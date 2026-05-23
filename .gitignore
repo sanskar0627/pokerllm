@@ -40,3 +40,18 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 claude.md
+
+# assets (too large for git)
+/public/images/
+/public/sounds/
+
+# claude config
+.claude/
+CLAUDE.md
+
+# misc
+.DS_Store
+test-logic.ts
+next-env.d.ts
+*.tsbuildinfo
+backdate-commits.sh
