@@ -143,7 +143,7 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
 
       {/* Raise slider panel */}
       {showRaise && (
-        <div className="relative w-full max-w-lg overflow-hidden rounded-xl animate-fade-up">
+        <div className="relative w-full max-w-lg overflow-hidden rounded-xl border-2 border-[#FFD700]/30 shadow-lg animate-fade-up">
           {/* Raise input background */}
           <img
             src="/images/raise-input-bg.png"
@@ -152,18 +152,18 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
             draggable={false}
           />
           {/* Dark overlay for readability */}
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative z-10 p-4 space-y-3">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative z-10 p-4 space-y-4">
             {/* Presets */}
             <div className="flex gap-2 justify-center">
               {presets.map(p => (
                 <button
                   key={p.label}
                   onClick={() => setRaiseAmount(p.amount)}
-                  className={`px-4 py-2 rounded-lg border-2 font-game font-semibold text-[12px] transition-all
+                  className={`px-3 py-2 rounded-lg border-2 font-pixel text-[8px] tracking-wide transition-all
                     ${raiseAmount === p.amount
-                      ? 'bg-[#FFD700]/20 border-[#FFD700] text-[#FFD700] shadow-[0_0_8px_rgba(255,215,0,0.3)]'
-                      : 'bg-black/40 border-white/20 text-white/60 hover:border-[#FFD700]/50 hover:text-white/80'}`}
+                      ? 'bg-[#FFD700]/25 border-[#FFD700] text-[#FFD700] shadow-[0_0_8px_rgba(255,215,0,0.3)] font-bold'
+                      : 'bg-black/50 border-white/10 text-white/40 hover:border-[#FFD700]/40 hover:text-white/60'}`}
                 >
                   {p.label}
                 </button>
@@ -187,7 +187,7 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
                 step={gameState.bigBlind}
                 value={raiseAmount || minRaise}
                 onChange={e => setRaiseAmount(Number(e.target.value))}
-                className="flex-1 h-2 rounded-full appearance-none bg-white/10
+                className="flex-1 h-2 rounded-full appearance-none bg-black/45 border border-white/10
                            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
                            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#FFD700] [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(255,215,0,0.5)]
                            [&::-webkit-slider-thumb]:cursor-pointer"
@@ -211,14 +211,13 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
                   setRaiseAmount(isNaN(val) || val < 0 ? minRaise : val)
                 }}
                 onBlur={() => {
-                  // Clamp on blur: if empty/NaN/too low, reset to minRaise
                   setRaiseAmount(a => {
                     if (isNaN(a) || a < minRaise) return minRaise
                     if (a > maxRaise) return maxRaise
                     return a
                   })
                 }}
-                className="w-28 bg-black/50 border-2 border-[#FFD700]/40 rounded-lg px-2 py-2 text-white font-game font-semibold text-[14px] text-center
+                className="w-28 bg-black/70 border-2 border-[#FFD700]/30 rounded-lg px-2 py-2 text-white font-pixel text-[11px] text-center
                            focus:outline-none focus:border-[#FFD700]/80"
               />
             </div>
@@ -227,17 +226,16 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
             <div className="flex gap-3 justify-center">
               <button
                 onClick={handleRaise}
-                className="relative overflow-hidden rounded-xl active:scale-95 transition-all"
+                className="relative overflow-hidden rounded-xl active:scale-95 transition-all hover:brightness-105"
               >
-                <img src="/images/buttons/raise-btn.png" alt="" className="w-44 h-11 object-cover" draggable={false} />
-                <span className="absolute inset-0 flex items-center justify-center font-game font-bold text-[13px] text-[#FFD700] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                <img src="/images/buttons/raise-btn.png" alt="" className="w-48 h-12 object-cover" draggable={false} />
+                <span className="absolute inset-0 flex items-center justify-center font-pixel text-[9px] text-[#FFD700] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                   RAISE TO {(raiseAmount || minRaise).toLocaleString()}
                 </span>
               </button>
               <button
                 onClick={() => setShowRaise(false)}
-                className="px-5 py-2.5 rounded-xl bg-black/40 border-2 border-white/20 font-game font-semibold text-[13px] text-white/60
-                           hover:text-white/90 hover:border-white/40 transition-all"
+                className="px-6 py-3 rounded-xl bg-black/60 border border-white/15 font-pixel text-[9px] text-white/45 hover:text-white/80 hover:border-white/30 transition-all active:scale-95"
               >
                 CANCEL
               </button>

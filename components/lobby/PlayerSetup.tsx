@@ -24,11 +24,12 @@ interface Props {
   bigBlind:      number
   onNameChange:  (name: string) => void
   onStackChange: (stack: number, sb: number, bb: number) => void
+  watchOnly?:    boolean
 }
 
 export function PlayerSetup({
   name, startingStack, smallBlind, bigBlind,
-  onNameChange, onStackChange,
+  onNameChange, onStackChange, watchOnly,
 }: Props) {
   const activePreset = BLIND_PRESETS.find(
     p => p.stack === startingStack && p.sb === smallBlind && p.bb === bigBlind
@@ -37,29 +38,32 @@ export function PlayerSetup({
   return (
     <div className="space-y-5">
       {/* Name */}
-      <div className="space-y-2">
-        <label className="font-game font-semibold text-[14px] text-[#FFD700] uppercase tracking-[2px]">
-          Your Name
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={e => onNameChange(e.target.value)}
-          placeholder="Enter your name..."
-          maxLength={20}
-          className="w-full bg-black/30 border-2 border-[#FFD700]/30 rounded-xl px-4 py-3 text-white font-game font-medium text-[16px]
-                     placeholder-white/30 focus:outline-none focus:border-[#FFD700]/70 transition-all
-                     shadow-[inset_0_2px_8px_rgba(0,0,0,0.3)]"
-        />
-      </div>
+      {!watchOnly && (
+        <div className="space-y-2">
+          <label className="font-pixel text-[10px] text-[#FFD700] uppercase tracking-[2px] block">
+            Your Name
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={e => onNameChange(e.target.value)}
+            placeholder="Enter your name..."
+            maxLength={20}
+            spellCheck={false}
+            className="w-full bg-black/45 border-2 border-[#FFD700]/25 rounded-xl px-4 py-3.5 text-white font-pixel text-[11px]
+                       placeholder-white/20 focus:outline-none focus:border-[#FFD700]/80 focus:shadow-[0_0_16px_rgba(255,215,0,0.25)] transition-all duration-200
+                       shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)]"
+          />
+        </div>
+      )}
 
       {/* Stack + Blind presets */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <label className="font-game font-semibold text-[14px] text-[#FFD700] uppercase tracking-[2px]">
+          <label className="font-pixel text-[10px] text-[#FFD700] uppercase tracking-[2px]">
             Chips & Blinds
           </label>
-          <span className="font-game text-[13px] text-white/40">
+          <span className="font-pixel text-[8px] text-white/40">
             {startingStack.toLocaleString()} &middot; {smallBlind}/{bigBlind} &middot;{' '}
             <span className="text-[#FFD700]">{Math.floor(startingStack / bigBlind)} BB</span>
           </span>
@@ -72,33 +76,33 @@ export function PlayerSetup({
               <button
                 key={preset.label}
                 onClick={() => onStackChange(preset.stack, preset.sb, preset.bb)}
-                className={`relative flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 font-game transition-all duration-200 overflow-hidden
+                className={`relative flex flex-col items-center gap-1.5 px-4 py-3.5 rounded-xl border-2 transition-all duration-200 overflow-hidden
                   ${isActive
-                    ? 'bg-[#FFD700]/10 border-[#FFD700]/60 text-white shadow-[0_0_12px_rgba(255,215,0,0.2)]'
-                    : 'bg-black/20 border-white/10 text-white/50 hover:border-[#FFD700]/30 hover:text-white/70'
+                    ? 'bg-[#FFD700]/15 border-[#FFD700] text-white shadow-[0_0_16px_rgba(255,215,0,0.25)]'
+                    : 'bg-black/35 border-white/10 text-white/40 hover:border-[#FFD700]/30 hover:text-white/60'
                   }`}
               >
                 {/* Shimmer on active */}
                 {isActive && (
                   <div className="absolute inset-0 animate-shimmer pointer-events-none">
-                    <div className="w-[200px] h-full bg-gradient-to-r from-transparent via-[#FFD700]/10 to-transparent" />
+                    <div className="w-[200px] h-full bg-gradient-to-r from-transparent via-[#FFD700]/15 to-transparent" />
                   </div>
                 )}
 
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-[14px]">{preset.label}</span>
+                  <span className="font-pixel text-[9px] tracking-wide font-bold">{preset.label}</span>
                   {preset.tag === 'default' && (
-                    <span className="text-[10px] bg-[#FFD700]/20 text-[#FFD700] px-2 py-0.5 rounded-full border border-[#FFD700]/40">
+                    <span className="text-[6px] bg-[#FFD700]/20 text-[#FFD700] px-2 py-0.5 rounded border border-[#FFD700]/40 font-pixel">
                       REC
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-[12px]">
-                  <span className="text-[#FFD700]/70">{preset.sb}/{preset.bb}</span>
-                  <span className={isActive ? 'text-[#FFD700]' : 'text-white/40'}>
+                <div className="flex items-center gap-2 text-[8px] font-pixel">
+                  <span className="text-[#00FFFF]">{preset.sb}/{preset.bb}</span>
+                  <span className={isActive ? 'text-white' : 'text-white/50'}>
                     {preset.stack.toLocaleString()}
                   </span>
-                  <span className="text-white/25">{preset.bbDepth}BB</span>
+                  <span className="text-white/20">{preset.bbDepth}BB</span>
                 </div>
               </button>
             )

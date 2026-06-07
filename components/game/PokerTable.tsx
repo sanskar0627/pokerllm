@@ -7,6 +7,7 @@ import { PotDisplay }    from './PotDisplay'
 import { ActionButtons } from './ActionButtons'
 import { ActionLog }     from './ActionLog'
 import { ResultModal }   from '@/components/result/ResultModal'
+import { GameOverModal } from '@/components/result/GameOverModal'
 
 interface Props {
   gameState:  ClientGameState
@@ -79,7 +80,7 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
 
       {/* Top row */}
       {topPlayers.length > 0 && (
-        <div className="flex justify-center gap-6 pr-68">
+        <div className={`flex justify-center gap-6 ${topPlayers.length > 1 ? 'pr-68' : ''}`}>
           {topPlayers.map(p => seat(p))}
         </div>
       )}
@@ -94,7 +95,7 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
 
         {/* Table felt (wide desktop) */}
         <div className="relative flex-1 rounded-[2.5rem] overflow-hidden
-                        shadow-[0_0_40px_rgba(255,215,0,0.12)]"
+                        shadow-[0_0_50px_rgba(0,0,0,0.85),_0_0_24px_rgba(255,215,0,0.15)] border-2 border-[#FFD700]/15"
              style={{ minHeight: 300 }}>
           <img
             src="/images/table.png"
@@ -102,7 +103,7 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
             className="absolute inset-0 w-full h-full object-cover"
             draggable={false}
           />
-          <div className="absolute inset-0 rounded-[2.5rem] border-[3px] border-[#FFD700]/30 pointer-events-none" />
+          <div className="absolute inset-0 rounded-[2.5rem] border-[4px] border-double border-[#FFD700]/30 pointer-events-none" />
 
           <div className="relative z-10 flex flex-col items-center justify-center gap-6 h-full py-10 px-8">
             <PotDisplay
@@ -139,11 +140,19 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
       )}
 
       {/* Result modal */}
-      {winners && (
+      {winners && gameState.phase !== 'ended' && (
         <ResultModal
           winners={winners}
           players={gameState.players}
           onClose={onNextRound}
+        />
+      )}
+
+      {/* Game Over modal */}
+      {gameState.phase === 'ended' && (
+        <GameOverModal
+          players={gameState.players}
+          playerId={playerId}
         />
       )}
     </div>

@@ -12,12 +12,42 @@ type Props = { params: Promise<{ gameId: string }> }
 export default function GamePage({ params }: Props) {
   const { gameId } = use(params)
   const router = useRouter()
-  const { musicOn, soundOn, toggleMusic, toggleSound } = useAudio()
+  const { musicOn, soundOn, toggleMusic, toggleSound, playSound } = useAudio()
 
   const { socket, connected, gameState, winners, thinkingId, error, nextRound } = useSocket()
   const [playerId, setPlayerId] = useState<string>('')
-  const [foldWinToast, setFoldWinToast] = useState<WinnerInfo | null>(null)
-  const autoNextRef = useRef(false)
+  // Removed fold-win auto-advance states
+
+  // SFX triggers
+  const prevPhaseRef = useRef<string>('')
+  const prevCardsCountRef = useRef<number>(0)
+  const prevPotRef = useRef<number>(0)
+  const prevWinnersRef = useRef<WinnerInfo[] | null>(null)
+
+  useEffect(() => {
+    if (!gameState) return
+
+    const phaseChanged = prevPhaseRef.current && prevPhaseRef.current !== gameState.phase
+    const cardsDealt = gameState.communityCards.length > prevCardsCountRef.current
+    const betPlaced = gameState.pot > prevPotRef.current
+
+    if (phaseChanged || cardsDealt) {
+      playSound('card-shuffle')
+    } else if (betPlaced) {
+      playSound('chip-toss')
+    }
+
+    prevPhaseRef.current = gameState.phase
+    prevCardsCountRef.current = gameState.communityCards.length
+    prevPotRef.current = gameState.pot
+  }, [gameState, playSound])
+
+  useEffect(() => {
+    if (winners && winners.length > 0 && !prevWinnersRef.current) {
+      playSound('win-coins')
+    }
+    prevWinnersRef.current = winners
+  }, [winners, playSound])
 
   useEffect(() => {
     if (!socket) return
@@ -26,28 +56,7 @@ export default function GamePage({ params }: Props) {
     socket.emit('join_game', gameId, pid)
   }, [socket, gameId])
 
-  // Auto-continue for fold wins ("Last Standing") — no modal, just a brief toast
-  const isFoldWin = winners?.every(w => w.handName === 'Last Standing') ?? false
-
-  useEffect(() => {
-    if (!winners || !isFoldWin) {
-      autoNextRef.current = false
-      return
-    }
-    // Prevent double-firing
-    if (autoNextRef.current) return
-    autoNextRef.current = true
-
-    // Show brief toast
-    setFoldWinToast(winners[0])
-
-    // Auto-continue after 1.5s
-    const timer = setTimeout(() => {
-      setFoldWinToast(null)
-      nextRound(gameId)
-    }, 1500)
-    return () => clearTimeout(timer)
-  }, [winners, isFoldWin, gameId, nextRound])
+  // Hand results now require manual confirmation via ResultModal
 
   function handleAction(action: PlayerAction, amount?: number) {
     if (!socket || !playerId) return
@@ -63,16 +72,17 @@ export default function GamePage({ params }: Props) {
           alt=""
           className="absolute inset-0 w-full h-full object-cover"
         />
+        <div className="absolute inset-0 bg-black/60" />
         <div className="relative z-10 min-h-screen flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <div className="w-12 h-12 border-4 border-[#FFD700] border-t-transparent rounded-full animate-spin mx-auto
-                            shadow-[0_0_16px_rgba(255,215,0,0.3)]" />
-            <p className="font-pixel text-[8px] text-white/40 tracking-[2px]">
-              {connected ? 'LOADING GAME...' : 'CONNECTING...'}
+          <div className="text-center space-y-5">
+            <div className="w-14 h-14 border-4 border-[#FFD700] border-t-transparent rounded-full animate-spin mx-auto
+                            shadow-[0_0_24px_rgba(255,215,0,0.4)]" />
+            <p className="font-pixel text-[9px] text-[#FFD700] tracking-[3px] animate-pulse">
+              {connected ? 'LOADING GAME felt...' : 'CONNECTING TO CASINO...'}
             </p>
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2">
-                <p className="font-pixel text-[7px] text-red-400">{error}</p>
+              <div className="bg-red-500/10 border-2 border-red-500/35 rounded-xl px-5 py-3.5 max-w-sm mx-auto shadow-md">
+                <p className="font-pixel text-[8px] text-red-400 leading-relaxed uppercase">{error}</p>
               </div>
             )}
           </div>
@@ -89,33 +99,35 @@ export default function GamePage({ params }: Props) {
         alt=""
         className="absolute inset-0 w-full h-full object-cover"
       />
+      <div className="absolute inset-0 bg-black/35" />
 
       <div className="relative z-10 min-h-screen py-4 sm:py-6">
         <div className="max-w-7xl mx-auto px-4 lg:px-8">
           {/* Top bar with background image */}
-          <div className="relative mb-5 overflow-hidden rounded-xl">
+          <div className="relative mb-5 overflow-hidden rounded-xl border-2 border-[#FFD700]/30 shadow-lg">
             <img src="/images/topbar-bg.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-black/30" />
             <div className="relative z-10 flex items-center justify-between px-6 py-3">
               <button
                 onClick={() => router.push('/')}
-                className="font-game font-semibold text-[16px] text-[#FFD700] hover:text-[#FFD700]/80 transition-colors tracking-wide"
+                className="font-pixel text-[10px] text-[#FFD700] hover:text-[#FFD700]/80 bg-black/40 border border-[#FFD700]/30 rounded-lg px-4 py-2 transition-all active:scale-95 tracking-wide shadow-md"
               >
                 &larr; LOBBY
               </button>
-              <h1 className="font-game font-bold text-[20px] text-[#FFD700] tracking-[4px] drop-shadow-[0_0_8px_rgba(255,215,0,0.3)]">
+              <h1 className="font-pixel font-bold text-[14px] sm:text-[18px] text-[#FFD700] tracking-[3px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                 POKER LLM
               </h1>
-              <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.6)]' : 'bg-red-400'}`} />
-                <span className="font-game text-[13px] text-white/40">{gameId.slice(0, 8)}</span>
+              <div className="flex items-center gap-3 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">
+                <div className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.7)]' : 'bg-red-400'}`} />
+                <span className="font-pixel text-[8px] text-white/50">{gameId.slice(0, 8)}</span>
               </div>
             </div>
           </div>
 
           {/* Error banner */}
           {error && (
-            <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2 text-center animate-fade-up">
-              <p className="font-pixel text-[7px] text-red-400">{error}</p>
+            <div className="mb-4 bg-red-500/10 border-2 border-red-500/35 rounded-xl px-4 py-2.5 text-center animate-fade-up shadow-md">
+              <p className="font-pixel text-[8px] text-red-400 uppercase tracking-wide">{error}</p>
             </div>
           )}
 
@@ -123,26 +135,12 @@ export default function GamePage({ params }: Props) {
             gameState={gameState}
             playerId={playerId}
             thinkingId={thinkingId}
-            winners={isFoldWin ? null : winners}
+            winners={winners}
             onAction={handleAction}
             onNextRound={() => nextRound(gameId)}
           />
 
-          {/* Brief toast for fold wins (opponent folded, no full modal needed) */}
-          {foldWinToast && (
-            <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 animate-fade-up">
-              <div className="bg-[#1a0a2e]/95 border border-[#FFD700]/40 rounded-xl px-6 py-3 flex items-center gap-3
-                              shadow-[0_0_24px_rgba(255,215,0,0.2)] backdrop-blur-sm">
-                <img src="/images/coin.png" alt="" className="w-6 h-6" draggable={false} />
-                <span className="font-game font-semibold text-[14px] text-[#FFD700]">
-                  +{foldWinToast.amount.toLocaleString()}
-                </span>
-                <span className="font-game text-[12px] text-white/50">
-                  Opponent folded
-                </span>
-              </div>
-            </div>
-          )}
+          {/* Fold wins now render the standard ResultModal */}
         </div>
       </div>
 

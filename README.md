@@ -115,7 +115,3 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ### Hand Evaluator
 
 Ranks hands from Royal Flush (1) to High Card (10). Handles split pots and tiebreakers using a ranked tiebreak array. Evaluates all 21 possible five-card combinations from 7 cards (2 hole + 5 community).
-
-## License
-
-MIT
