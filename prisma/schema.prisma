@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth tables (NextAuth / Auth.js compatible) ─────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  credits       Int       @default(0)
+
+  accounts        Account[]
+  sessions        Session[]
+  transactions    Transaction[]
+  gameRecords     GameRecord[]
+  aiPlayerProfiles AiPlayerProfile[]
+  aiNotes         AiNote[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Credits & billing ───────────────────────────────────────────────────────
+
+model Transaction {
+  id      String @id @default(cuid())
+  userId  String
+  amount  Int    // positive = credit added, negative = credit spent
+  type    String // 'purchase' | 'game_debit' | 'refund' | 'signup_bonus'
+  details String? // e.g. "Game abc123 — Claude + ChatGPT x 15 rounds"
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─── Game history ────────────────────────────────────────────────────────────
+
+model GameRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  gameId     String   // matches the in-memory socket game ID
+  models     String[] // which AI models were used
+  rounds     Int      // how many rounds played
+  creditCost Int      // total credits charged
+  result     String?  // 'win' | 'loss' | 'abandoned'
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─── AI Memory (per-user, per-model) ────────────────────────────────────────
+// Each AI model builds a separate profile for each user it plays against.
+// Memory persists across games and server restarts.
+
+model AiPlayerProfile {
+  id           String   @id @default(cuid())
+  userId       String                          // which human player this profile is about
+  aiModel      String                          // 'claude' | 'chatgpt' | 'gemini' | etc.
+  gamesPlayed  Int      @default(0)
+  wins         Int      @default(0)
+  losses       Int      @default(0)
+  overallStyle String   @default("Unknown")    // TAG, LAG, Calling Station, etc.
+  traits       String[] @default([])           // behavioral patterns
+  patterns     String[] @default([])           // strategic observations from reflections
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([userId, aiModel])                  // one profile per user per AI model
+  @@index([aiModel])
+}
+
+model AiNote {
+  id        String   @id @default(cuid())
+  aiModel   String                             // which AI model wrote this note
+  userId    String                             // whose game session produced this note
+  text      String                             // the actual note content (max 200 chars)
+  category  String                             // strategy | opponent | rule | bluff | pattern | mistake | general
+  gameId    String                             // which game this came from
+  phase     String?                            // optional: which game phase
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([aiModel, userId])
+  @@index([aiModel])
+}
+
+model AiGlobalInsight {
+  id        String   @id @default(cuid())
+  aiModel   String                             // which AI model generated this
+  text      String                             // general poker wisdom (not player-specific)
+  source    String?                            // 'reflection' | 'game_learning'
+
+  createdAt DateTime @default(now())
+
+  @@unique([aiModel, text])                    // no duplicate insights per model
+  @@index([aiModel])
+}
