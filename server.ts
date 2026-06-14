@@ -12,7 +12,9 @@ import {
   rotateBlinds,
 } from '@/lib/gameEngine'
 import { determineWinners } from '@/lib/handEvaluator'
-import { getAIDecision, logAIConnectionStatus } from '@/lib/llmOrchestrator'
+import { getAIDecision, logAIConnectionStatus, reflectOnHand, clearGameMemory, getGameMemories, addChatMessage } from '@/lib/llmOrchestrator'
+import { promoteGameLearnings } from '@/lib/permanentMemory'
+import { getSocketSession } from '@/lib/socketAuth'
 
 import type {
   ServerToClientEvents,
@@ -21,6 +23,7 @@ import type {
   ActionPayload,
   GameState,
   AIModel,
+  AIReflectionPayload,
 } from '@/types/poker'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -28,7 +31,7 @@ const app = next({ dev })
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const VALID_AI_MODELS   = new Set<AIModel>(['claude', 'chatgpt', 'gemini', 'grok', 'deepseek'])
+const VALID_AI_MODELS   = new Set<AIModel>(['claude', 'chatgpt', 'gemini', 'grok', 'deepseek', 'groq'])
 const VALID_ACTIONS     = new Set(['fold', 'call', 'raise', 'check'])
 const MAX_GAMES_PER_IP  = 5           // max concurrent games per IP
 const GAME_TTL_MS       = 60 * 60 * 1000  // 1 hour — abandoned games cleaned up
@@ -163,15 +166,30 @@ async function triggerAITurn(gameId: string, io: Server): Promise<void> {
       }
 
       setGame(gameId, next)
-      await broadcastGameState(gameId, io, next)
+
+      // ── Emit AI table talk if the AI said something ──
+      if (payload.chat) {
+        const chatMsg = {
+          playerId: player.id,
+          playerName: player.name,
+          message: payload.chat,
+          ts: Date.now(),
+        }
+        io.to(gameId).emit('ai_chat', chatMsg)
+        // Store in chat log so other AIs can see and reply
+        addChatMessage(gameId, player.name, payload.chat)
+        console.log(`[CHAT] 💬 ${player.name}: "${payload.chat}"`)
+      }
 
       if (next.phase === 'showdown') {
-        // Release the lock BEFORE handleShowdown so the next round's
-        // triggerAITurn call can acquire it
+        // Don't broadcast here — handleShowdown will broadcast once WITH winners
         aiTurnActive.delete(gameId)
         await handleShowdown(gameId, io)
-        return   // handleShowdown starts the next round; we're done
+        return
       }
+
+      // Only broadcast non-showdown states (showdown is handled above)
+      await broadcastGameState(gameId, io, next)
     }
   } finally {
     aiTurnActive.delete(gameId)
@@ -187,7 +205,13 @@ async function startRound(gameId: string, io: Server): Promise<void> {
     setGame(gameId, dealt)
     await broadcastGameState(gameId, io, dealt)
 
-    console.log(`[game] ${gameId} round ${dealt.roundNumber} started — ${dealt.players.filter(p => p.isActive).length} active players`)
+    const active = dealt.players.filter(p => p.isActive)
+    const dealer = dealt.players[dealt.dealerIdx]?.name ?? '?'
+    const sb     = dealt.players[dealt.smallBlindIdx]?.name ?? '?'
+    const bb     = dealt.players[dealt.bigBlindIdx]?.name ?? '?'
+    console.log(`\n┌─── ROUND ${dealt.roundNumber} ─── ${gameId} ───────────────────────┐`)
+    console.log(`│  ${active.length} players | Dealer: ${dealer} | SB: ${sb} | BB: ${bb}`)
+    console.log(`└──────────────────────────────────────────────┘`)
 
     if (dealt.players[dealt.currentTurnIdx]?.isAI) {
       await triggerAITurn(gameId, io)
@@ -214,7 +238,24 @@ async function handleShowdown(gameId: string, io: Server): Promise<void> {
     await broadcastGameState(gameId, io, state)
     io.to(gameId).emit('game_over', winners)
 
-    console.log(`[game] ${gameId} round ${state.roundNumber} showdown — waiting for CONTINUE`)
+    const winSummary = winners.map(w => `${state.players.find(p => p.id === w.playerId)?.name ?? w.playerId}: ${w.handName} (+${w.amount})`).join(', ')
+    console.log(`  🏆 SHOWDOWN → ${winSummary}`)
+
+    // ── Post-showdown AI reflections (run in parallel, stored privately) ──
+    // Reflections are computed and stored in AI memory (feeds into future decisions)
+    // but are NOT sent to the client until the game is fully over (prevents human from
+    // exploiting AI strategies mid-game).
+    const aiPlayers = state.players.filter(p => p.isAI && p.isActive)
+    if (aiPlayers.length > 0) {
+      console.log(`  💭 AIs reflecting on hand (private — not sent to client)...`)
+      const reflectionPromises = aiPlayers.map(p => reflectOnHand(state, p.id))
+      Promise.allSettled(reflectionPromises).then(results => {
+        const count = results.filter(r => r.status === 'fulfilled' && r.value).length
+        if (count > 0) console.log(`  💭 ${count} AI reflection(s) stored in memory`)
+      })
+    }
+
+    console.log(`  ⏸  Waiting for CONTINUE...`)
     // Stop here. The next round starts when the client emits 'next_round'.
 
   } catch (err) {
@@ -238,8 +279,65 @@ async function handleNextRound(gameId: string, io: Server): Promise<void> {
       const ended = { ...next, phase: 'ended' as const }
       setGame(gameId, ended)
       await broadcastGameState(gameId, io, ended)
+
+      // ── Game over: NOW send all accumulated AI reflections to the client ──
+      // This is the ONLY time the human sees AI thinking — game is finished, no exploit possible.
+      const memories = getGameMemories(gameId)
+      if (memories) {
+        const payload: AIReflectionPayload = { reflections: [] }
+        for (const [playerId, mem] of memories) {
+          const player = ended.players.find(p => p.id === playerId)
+          if (!player) continue
+          for (const r of mem.reflections) {
+            payload.reflections.push({
+              playerId,
+              playerName: player.name,
+              roundNumber: r.roundNumber,
+              insights: r.insights,
+              selfCritique: r.selfCritique,
+              // Sanitize opponent reads: use names not IDs, so human can't reverse-engineer
+              opponentReads: Object.fromEntries(
+                Object.entries(r.opponentReads).map(([oppId, read]) => {
+                  const oppName = ended.players.find(p => p.id === oppId)?.name ?? oppId
+                  return [oppName, read]
+                })
+              ),
+            })
+          }
+        }
+        if (payload.reflections.length > 0) {
+          io.to(gameId).emit('ai_reflections', payload)
+          console.log(`  💭 Sent ${payload.reflections.length} total AI reflection(s) to client (game over)`)
+        }
+      }
+
+      // ── Promote temporary learnings to permanent memory before clearing ──
+      const tempMemories = getGameMemories(gameId)
+      if (tempMemories) {
+        const winner = activePlayers[0]
+        for (const [aiPlayerId, aiMem] of tempMemories) {
+          const aiPlayer = ended.players.find(p => p.id === aiPlayerId)
+          if (!aiPlayer?.model) continue
+
+          // Build opponent list for this AI (everyone except itself)
+          const opponents = ended.players
+            .filter(p => p.id !== aiPlayerId)
+            .map(p => ({
+              name: p.name,
+              isAI: p.isAI,
+              won: winner?.id === p.id,
+            }))
+
+          promoteGameLearnings(aiPlayer.model, ended.userId, aiMem, opponents, ended)
+        }
+      }
+
+      // Clean up temporary game memory
+      clearGameMemory(gameId)
       setTimeout(() => deleteGame(gameId), 5 * 60 * 1000)
-      console.log(`[game] ${gameId} ended — only ${activePlayers.length} player(s) left`)
+      console.log(`\n╔════════════════════════════════════════════╗`)
+      console.log(`║  GAME OVER: ${gameId} — ${activePlayers[0]?.name ?? 'nobody'} wins!`)
+      console.log(`╚════════════════════════════════════════════╝`)
       return
     }
 
@@ -248,7 +346,7 @@ async function handleNextRound(gameId: string, io: Server): Promise<void> {
                            && state.communityCards.length === 0
     const prevRound = state.roundNumber
 
-    console.log(`[game] ${gameId} round ${prevRound} complete${wasPreflopFold ? ' (preflop fold)' : ''} — starting next round`)
+    console.log(`  ✅ Round ${prevRound} complete${wasPreflopFold ? ' (preflop fold)' : ''} → next round`)
     next = rotateBlinds(next)
 
     // Pure preflop folds don't count toward the round number
@@ -276,15 +374,62 @@ function startGameReaper() {
   }, 5 * 60 * 1000) // run every 5 minutes
 }
 
+// Periodically clean up unverified users whose tokens have expired
+function startUnverifiedUserCleanup() {
+  const CLEANUP_INTERVAL = 15 * 60 * 1000  // every 15 minutes
+  const run = () => {
+    const baseUrl = `http://localhost:3000`
+    fetch(`${baseUrl}/api/cron/cleanup-unverified`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.deletedUsers > 0 || data.deletedTokens > 0) {
+          console.log(`[cron] ${data.message}`)
+        }
+      })
+      .catch(err => console.error('[cron] cleanup fetch failed:', err.message))
+  }
+  // First run 1 minute after server starts (wait for Next.js to be ready)
+  setTimeout(run, 60_000)
+  setInterval(run, CLEANUP_INTERVAL)
+}
+
 // ─── Server bootstrap ─────────────────────────────────────────────────────────
 
 app.prepare().then(() => {
   const handle     = app.getRequestHandler()
-  const httpServer = createServer((req, res) => handle(req, res))
+  const noCachePages = new Set(['/signup', '/login', '/verify'])
+  const httpServer = createServer((req, res) => {
+    const pathname = (req.url || '').split('?')[0]
+    if (noCachePages.has(pathname)) {
+      res.setHeader('Cache-Control', 'no-store')
+    }
+    handle(req, res)
+  })
 
-  const allowedOrigin = process.env.ALLOWED_ORIGIN ?? (dev ? '*' : '*')
+  // Lock CORS to localhost (we run on localhost:3000). Override with
+  // ALLOWED_ORIGIN (comma-separated) when deploying to a real domain.
+  const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? 'http://localhost:3000,http://127.0.0.1:3000')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean)
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-    cors: { origin: allowedOrigin },
+    cors: { origin: allowedOrigins, credentials: true },
+  })
+
+  // ── Socket authentication ────────────────────────────────────────────────
+  // The socket triggers paid LLM calls, so every connection must carry a valid
+  // NextAuth session cookie. Anonymous connections are rejected at handshake.
+  io.use(async (socket, next) => {
+    try {
+      const session = await getSocketSession(socket.handshake.headers.cookie)
+      if (!session) {
+        return next(new Error('unauthorized'))
+      }
+      ;(socket.data as { userId?: string }).userId = session.userId
+      next()
+    } catch {
+      next(new Error('unauthorized'))
+    }
   })
 
   // Track create_game rate per socket: { count, windowStart }
@@ -293,6 +438,7 @@ app.prepare().then(() => {
   const gamesPerIp    = new Map<string, Set<string>>()
 
   startGameReaper()
+  startUnverifiedUserCleanup()
 
   io.on('connection', socket => {
     const clientIp = (socket.handshake.headers['x-forwarded-for'] as string)?.split(',')[0].trim()
@@ -330,8 +476,16 @@ app.prepare().then(() => {
       }
 
       const gameId = nanoid(8)
-      const state  = createGame(validated, gameId)
+      const userId = (socket.data as { userId?: string }).userId ?? ''
+      const state  = createGame(validated, gameId, userId)
       setGame(gameId, state)
+
+      const playerNames = state.players.map(p => p.name).join(' vs ')
+      console.log(`\n╔════════════════════════════════════════════╗`)
+      console.log(`║  NEW GAME: ${gameId}`)
+      console.log(`║  Players: ${playerNames}`)
+      console.log(`║  Stack: ${validated.startingStack} | Blinds: ${validated.smallBlind}/${validated.bigBlind}`)
+      console.log(`╚════════════════════════════════════════════╝`)
 
       // Log AI connection status so user can verify keys
       logAIConnectionStatus(validated.selectedAIs)
@@ -372,19 +526,27 @@ app.prepare().then(() => {
         return
       }
 
-      // Never allow impersonating an AI player
+      // Determine effective player ID
+      let effectivePlayerId = playerId
       if (playerId) {
         const player = state.players.find(p => p.id === playerId)
         if (!player || player.isAI) {
-          socket.emit('game_error', 'Cannot join as this player')
-          return
+          // No matching human player — check if this is a watch-only game (all players are AI)
+          const hasHuman = state.players.some(p => !p.isAI)
+          if (!hasHuman) {
+            // Allow joining as spectator
+            effectivePlayerId = ''
+          } else {
+            socket.emit('game_error', 'Cannot join as this player')
+            return
+          }
         }
       }
 
       socket.join(gameId)
-      ;(socket.data as { playerId?: string; gameId?: string }).playerId = playerId
+      ;(socket.data as { playerId?: string; gameId?: string }).playerId = effectivePlayerId
       ;(socket.data as { playerId?: string; gameId?: string }).gameId   = gameId
-      socket.emit('game_state', buildClientState(state, playerId))
+      socket.emit('game_state', buildClientState(state, effectivePlayerId))
     })
 
     // ── player_action ──────────────────────────────────────────────────────────
@@ -437,11 +599,12 @@ app.prepare().then(() => {
       }
 
       setGame(gameId, next)
-      await broadcastGameState(gameId, io, next)
 
       if (next.phase === 'showdown') {
+        // Don't broadcast here — handleShowdown broadcasts once WITH winners
         await handleShowdown(gameId, io)
       } else {
+        await broadcastGameState(gameId, io, next)
         await triggerAITurn(gameId, io)
       }
     })
@@ -459,6 +622,36 @@ app.prepare().then(() => {
         return
       }
       await handleNextRound(gameId, io)
+    })
+
+    // ── send_chat (human player chat) ──────────────────────────────────────────
+    socket.on('send_chat', (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') return
+      const p = payload as Record<string, unknown>
+      if (!isValidGameId(p.gameId) || typeof p.message !== 'string') return
+
+      const gameId  = p.gameId as string
+      const message = (p.message as string).slice(0, 120).replace(/[<>"]/g, '')
+      if (!message.trim()) return
+
+      const socketData = socket.data as { playerId?: string; gameId?: string }
+      if (socketData.gameId !== gameId) return
+
+      const state = getGame(gameId)
+      if (!state) return
+
+      const player = state.players.find(pl => pl.id === socketData.playerId)
+      if (!player) return
+
+      const chatMsg = {
+        playerId: player.id,
+        playerName: player.name,
+        message,
+        ts: Date.now(),
+      }
+      io.to(gameId).emit('ai_chat', chatMsg)
+      addChatMessage(gameId, player.name, message)
+      console.log(`[CHAT] 💬 ${player.name}: "${message}"`)
     })
 
     socket.on('disconnect', () => {
