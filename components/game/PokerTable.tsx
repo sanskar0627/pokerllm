@@ -1,6 +1,7 @@
 'use client'
 
-import type { ClientGameState, ClientPlayer, PlayerAction, WinnerInfo } from '@/types/poker'
+import { useState, useEffect } from 'react'
+import type { ClientGameState, ClientPlayer, PlayerAction, WinnerInfo, AIReflectionPayload } from '@/types/poker'
 import { PlayerSeat }    from './PlayerSeat'
 import { CommunityCards } from './CommunityCards'
 import { PotDisplay }    from './PotDisplay'
@@ -9,16 +10,103 @@ import { ActionLog }     from './ActionLog'
 import { ResultModal }   from '@/components/result/ResultModal'
 import { GameOverModal } from '@/components/result/GameOverModal'
 
-interface Props {
-  gameState:  ClientGameState
-  playerId:   string
-  thinkingId: string | null
-  winners:    WinnerInfo[] | null
-  onAction:    (action: PlayerAction, amount?: number) => void
-  onNextRound: () => void
+// ─── Dust Particles — ambient floating gold specs like Golden-Flop ───────────
+
+function DustParticles() {
+  const particles = Array.from({ length: 14 }).map((_, i) => ({
+    left: `${5 + (i * 7) % 90}%`,
+    bottom: `${Math.random() * 30}%`,
+    size: 2 + Math.random() * 3,
+    duration: 5 + Math.random() * 7,
+    delay: Math.random() * 6,
+    opacity: 0.3 + Math.random() * 0.4,
+  }))
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-[5]">
+      {particles.map((p, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full bg-[#FFD700] animate-dust"
+          style={{
+            left: p.left,
+            bottom: p.bottom,
+            width: p.size,
+            height: p.size,
+            opacity: p.opacity,
+            '--dust-duration': `${p.duration}s`,
+            '--dust-delay': `${p.delay}s`,
+          } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  )
 }
 
-export function PokerTable({ gameState, playerId, thinkingId, winners, onAction, onNextRound }: Props) {
+// ─── Win Popup Toast — bottom-right like Golden-Flop ─────────────────────────
+
+function WinToast({ winners, players }: { winners: WinnerInfo[]; players: ClientPlayer[] }) {
+  const [visible, setVisible] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), 4000)
+    return () => clearTimeout(timer)
+  }, [])
+
+  if (!visible || winners.length === 0) return null
+
+  const w = winners[0]
+  const name = players.find(p => p.id === w.playerId)?.name ?? w.playerId
+
+  return (
+    <div className={`fixed bottom-16 sm:bottom-6 right-3 sm:right-6 z-40 ${visible ? 'animate-slide-in-right' : 'animate-slide-out-right'}`}>
+      <div className="bg-[rgba(26,10,46,0.95)] border-2 border-[#FFD700]/60 rounded-xl px-3.5 sm:px-5 py-2.5 sm:py-3.5 shadow-[0_0_24px_rgba(255,215,0,0.3)] flex items-center gap-2.5 sm:gap-3 max-w-[260px] sm:max-w-xs">
+        <div className="w-10 h-10 rounded-full bg-[#FFD700]/15 border border-[#FFD700]/40 flex items-center justify-center shrink-0">
+          <span className="text-lg select-none">🏆</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="font-pixel text-[8px] text-[#FFD700] tracking-wide">{name.toUpperCase()} WINS</span>
+          <span className="font-pixel text-[6px] text-[#00FFFF]">{w.handName}</span>
+          <div className="flex items-center gap-1">
+            <img src="/images/coin.png" alt="" className="w-3 h-3 object-contain" draggable={false} />
+            <span className="font-pixel text-[7px] text-[#FFD700] tabular-nums">+{w.amount.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Countdown Overlay ───────────────────────────────────────────────────────
+
+function CountdownOverlay({ count }: { count: number }) {
+  return (
+    <div className="absolute inset-[8%] sm:inset-[6%] z-30 flex flex-col items-center justify-center bg-black/60 rounded-[2rem] sm:rounded-[3rem]">
+      <span className="font-pixel text-[10px] text-[#FFD700]/70 tracking-[3px] mb-4">GAME STARTING IN</span>
+      <span
+        key={count}
+        className="font-pixel text-[64px] text-[#FFD700] animate-countdown drop-shadow-[0_0_32px_rgba(255,215,0,0.6)]"
+      >
+        {count}
+      </span>
+    </div>
+  )
+}
+
+// ─── Main PokerTable Component ───────────────────────────────────────────────
+
+interface Props {
+  gameState:      ClientGameState
+  playerId:       string
+  thinkingId:     string | null
+  winners:        WinnerInfo[] | null
+  aiReflections:  AIReflectionPayload['reflections']
+  chatBubbles:    Record<string, string>
+  onAction:       (action: PlayerAction, amount?: number) => void
+  onNextRound:    () => void
+}
+
+export function PokerTable({ gameState, playerId, thinkingId, winners, aiReflections, chatBubbles, onAction, onNextRound }: Props) {
   const { players, dealerIdx, currentTurnIdx } = gameState
   const winnerIds = new Set(winners?.map(w => w.playerId) ?? [])
 
@@ -33,13 +121,14 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
         isThinking={thinkingId === player.id}
         isSelf={player.id === playerId}
         isWinner={winnerIds.has(player.id)}
+        chatMessage={chatBubbles[player.id]}
       />
     )
   }
 
-  // ── Distribute players around the table for desktop ──
-  // The human (self) always goes bottom-center.
-  // AIs spread across top, left, right.
+  // ── 6-seat layout matching Golden-Flop ──
+  // Positions: top-left, top-center, top-right, bottom-right, bottom-center, bottom-left
+  // Human (self) always goes bottom-center
   const total = players.length
 
   let topPlayers: ClientPlayer[] = []
@@ -51,11 +140,11 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
     topPlayers = players.slice(0, 1)
     bottomPlayers = players.slice(1)
   } else if (total === 3) {
-    topPlayers = players.slice(0, 2)
-    bottomPlayers = players.slice(2)
+    topPlayers = [players[0]]
+    leftPlayers = [players[1]]
+    bottomPlayers = [players[2]]
   } else if (total === 4) {
     topPlayers = [players[0], players[1]]
-    leftPlayers = []
     rightPlayers = [players[2]]
     bottomPlayers = [players[3]]
   } else if (total === 5) {
@@ -64,7 +153,7 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
     rightPlayers = [players[3]]
     bottomPlayers = [players[4]]
   } else {
-    // 6 players
+    // 6 players — full layout
     topPlayers = [players[0], players[1], players[2]]
     leftPlayers = [players[3]]
     rightPlayers = [players[4]]
@@ -72,71 +161,94 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
   }
 
   return (
-    <div className="relative flex flex-col gap-4 w-full max-w-7xl mx-auto">
-      {/* Action log — fixed top-right */}
-      <div className="absolute top-0 right-0 z-20">
+    <div className="relative flex flex-col gap-2 sm:gap-3 w-full max-w-7xl mx-auto px-1 sm:px-0">
+      {/* Action log — top-right, nudged slightly right */}
+      <div className="absolute -top-1 right-2 sm:right-3 z-20">
         <ActionLog log={gameState.log} players={gameState.players} />
       </div>
 
       {/* Top row */}
       {topPlayers.length > 0 && (
-        <div className={`flex justify-center gap-6 ${topPlayers.length > 1 ? 'pr-68' : ''}`}>
+        <div className={`flex justify-center gap-3 sm:gap-8 ${topPlayers.length > 1 ? 'sm:pr-68' : ''}`}>
           {topPlayers.map(p => seat(p))}
         </div>
       )}
 
-      {/* Middle: left seats + table + right seats */}
-      <div className="flex items-stretch gap-4">
+      {/* Middle: left seats + table felt + right seats */}
+      <div className="flex items-center gap-2 sm:gap-6">
         {/* Left column */}
-        <div className="flex flex-col gap-3 justify-center items-center shrink-0"
-             style={{ minWidth: leftPlayers.length > 0 ? 156 : 0 }}>
+        <div className="flex flex-col gap-3 sm:gap-4 justify-center items-center shrink-0"
+             style={{ minWidth: leftPlayers.length > 0 ? 70 : 0 }}>
           {leftPlayers.map(p => seat(p))}
         </div>
 
-        {/* Table felt (wide desktop) */}
-        <div className="relative flex-1 rounded-[2.5rem] overflow-hidden
-                        shadow-[0_0_50px_rgba(0,0,0,0.85),_0_0_24px_rgba(255,215,0,0.15)] border-2 border-[#FFD700]/15"
-             style={{ minHeight: 300 }}>
+        {/* Table felt — tabletop.png image */}
+        <div className="relative flex-1 overflow-visible"
+             style={{ aspectRatio: '780 / 320', maxHeight: 'clamp(220px, 40vh, 400px)' }}>
+          {/* Table image — transparent bg, gold border built into the image */}
           <img
-            src="/images/table.png"
+            src="/images/tabletop-removebg-preview.png"
             alt=""
-            className="absolute inset-0 w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-contain drop-shadow-[0_4px_40px_rgba(0,0,0,0.7)] rotate-180"
             draggable={false}
           />
-          <div className="absolute inset-0 rounded-[2.5rem] border-[4px] border-double border-[#FFD700]/30 pointer-events-none" />
 
-          <div className="relative z-10 flex flex-col items-center justify-center gap-6 h-full py-10 px-8">
+          {/* Dust particles — inside the table area */}
+          <DustParticles />
+
+          {/* Waiting overlay — sized to the felt area (inner ~80%) */}
+          {gameState.phase === 'waiting' && (
+            <div className="absolute inset-[8%] sm:inset-[6%] z-30 flex flex-col items-center justify-center bg-black/50 rounded-[2rem] sm:rounded-[3rem]">
+              <span className="font-pixel text-[11px] sm:text-[14px] text-[#FFD700] tracking-[4px] animate-pulse drop-shadow-[0_0_16px_rgba(255,215,0,0.4)]">
+                WAITING
+              </span>
+              <span className="font-pixel text-[6px] sm:text-[7px] text-white/40 mt-2 sm:mt-3 tracking-wide">
+                Setting up the table...
+              </span>
+            </div>
+          )}
+
+          {/* Table content: pot + community cards — centered on the felt */}
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 sm:gap-4 px-4 sm:px-12">
             <PotDisplay
               pot={gameState.pot}
               currentBet={gameState.currentBet}
               phase={gameState.phase}
               roundNumber={gameState.roundNumber}
+              bigBlind={gameState.bigBlind}
             />
             <CommunityCards cards={gameState.communityCards} />
           </div>
         </div>
 
         {/* Right column */}
-        <div className="flex flex-col gap-3 justify-center items-center shrink-0"
-             style={{ minWidth: rightPlayers.length > 0 ? 156 : 0 }}>
+        <div className="flex flex-col gap-3 sm:gap-4 justify-center items-center shrink-0"
+             style={{ minWidth: rightPlayers.length > 0 ? 70 : 0 }}>
           {rightPlayers.map(p => seat(p))}
         </div>
       </div>
 
-      {/* Bottom row */}
+      {/* Bottom row — pulled closer to table */}
       {bottomPlayers.length > 0 && (
-        <div className="flex justify-center gap-6">
+        <div className="flex justify-center gap-3 sm:gap-8 -mt-2 sm:-mt-3">
           {bottomPlayers.map(p => seat(p))}
         </div>
       )}
 
-      {/* Action buttons */}
+      {/* Action buttons — tight under player cards */}
       {playerId && (
-        <ActionButtons
-          gameState={gameState}
-          playerId={playerId}
-          onAction={onAction}
-        />
+        <div className="-mt-1">
+          <ActionButtons
+            gameState={gameState}
+            playerId={playerId}
+            onAction={onAction}
+          />
+        </div>
+      )}
+
+      {/* Win toast — shows in bottom-right corner */}
+      {winners && gameState.phase !== 'ended' && (
+        <WinToast winners={winners} players={gameState.players} />
       )}
 
       {/* Result modal */}
@@ -153,6 +265,7 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, onAction,
         <GameOverModal
           players={gameState.players}
           playerId={playerId}
+          aiReflections={aiReflections}
         />
       )}
     </div>
