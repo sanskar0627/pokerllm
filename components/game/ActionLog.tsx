@@ -9,27 +9,37 @@ interface Props {
 }
 
 const ACTION_COLOR: Record<string, string> = {
-  fold:  'text-red-400',
-  call:  'text-[#00FFFF]',
-  raise: 'text-[#FFD700]',
-  check: 'text-white/60',
-  post:  'text-purple-400',
+  fold:    'text-red-400',
+  call:    'text-[#00FFFF]',
+  raise:   'text-[#FFD700]',
+  check:   'text-white/60',
+  post_sb: 'text-purple-300',
+  post_bb: 'text-purple-400',
 }
 
 const ACTION_ICON: Record<string, string> = {
-  fold:  '✕',
-  call:  '→',
-  raise: '↑',
-  check: '✓',
-  post:  '●',
+  fold:    '✕',
+  call:    '→',
+  raise:   '↑',
+  check:   '✓',
+  post_sb: '◐',
+  post_bb: '●',
 }
 
 const ACTION_LABEL: Record<string, string> = {
-  fold:  'FOLD',
-  call:  'CALL',
-  raise: 'RAISE',
-  check: 'CHECK',
-  post:  'BLIND',
+  fold:    'FOLD',
+  call:    'CALL',
+  raise:   'RAISE TO',
+  check:   'CHECK',
+  post_sb: 'SM BLIND',
+  post_bb: 'BIG BLIND',
+}
+
+/** Format the chip amount based on action type */
+function formatAmount(action: string, amount: number): string | null {
+  if (amount <= 0) return null
+  if (action === 'call')  return `+${amount.toLocaleString()}`
+  return amount.toLocaleString()
 }
 
 export function ActionLog({ log, players }: Props) {
@@ -47,7 +57,7 @@ export function ActionLog({ log, players }: Props) {
   const visible = log.slice(-20)
 
   return (
-    <div className="bg-[rgba(26,10,46,0.88)] backdrop-blur-md border-2 border-[#FFD700]/30 rounded-xl p-4 w-68 max-h-64 overflow-y-auto flex flex-col gap-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
+    <div className="bg-[rgba(26,10,46,0.88)] backdrop-blur-md border-2 border-[#FFD700]/30 rounded-xl p-2.5 sm:p-4 w-44 sm:w-68 max-h-40 sm:max-h-64 overflow-y-auto flex flex-col gap-1 sm:gap-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
       <p className="font-pixel text-[8px] text-[#FFD700] uppercase tracking-[2px] mb-1.5 border-b border-[#FFD700]/15 pb-1">Action Log</p>
       {visible.length === 0 && (
         <p className="font-pixel text-[7px] text-white/20">Waiting for actions...</p>
@@ -58,14 +68,15 @@ export function ActionLog({ log, players }: Props) {
           className="font-pixel text-[8px] flex items-center gap-1.5 animate-fade-up leading-relaxed"
           style={{ animationDelay: `${i * 20}ms` }}
         >
-          <span className="text-white/25 text-[7px] w-8 shrink-0">{entry.phase.slice(0, 3).toUpperCase()}</span>
-          <span className="text-white/75 truncate max-w-[80px]">{playerName(entry.playerId)}</span>
+          <span className="text-white/25 text-[6px] sm:text-[7px] w-6 sm:w-8 shrink-0">{entry.phase.slice(0, 3).toUpperCase()}</span>
+          <span className="text-white/75 truncate max-w-[50px] sm:max-w-[80px]">{playerName(entry.playerId)}</span>
           <span className={ACTION_COLOR[entry.action] ?? 'text-white/40'}>
             {ACTION_ICON[entry.action]} {ACTION_LABEL[entry.action] ?? entry.action.toUpperCase()}
           </span>
-          {entry.amount > 0 && (
-            <span className="text-[#FFD700] ml-auto tabular-nums">{entry.amount.toLocaleString()}</span>
-          )}
+          {(() => {
+            const display = formatAmount(entry.action, entry.amount)
+            return display ? <span className="text-[#FFD700] ml-auto tabular-nums">{display}</span> : null
+          })()}
         </div>
       ))}
       <div ref={bottomRef} />
