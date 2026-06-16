@@ -5,6 +5,7 @@ import { useRouter }                from 'next/navigation'
 import { useSocket }                from '@/hooks/useSocket'
 import { useAudio }                 from '@/hooks/useAudio'
 import { PokerTable }               from '@/components/game/PokerTable'
+import { ChatPanel }                from '@/components/game/ChatPanel'
 import type { PlayerAction, WinnerInfo } from '@/types/poker'
 
 type Props = { params: Promise<{ gameId: string }> }
@@ -12,9 +13,9 @@ type Props = { params: Promise<{ gameId: string }> }
 export default function GamePage({ params }: Props) {
   const { gameId } = use(params)
   const router = useRouter()
-  const { musicOn, soundOn, toggleMusic, toggleSound, playSound } = useAudio()
+  const { playSound } = useAudio()
 
-  const { socket, connected, gameState, winners, thinkingId, error, nextRound } = useSocket()
+  const { socket, connected, gameState, winners, thinkingId, error, nextRound, aiReflections, chatBubbles, chatLog, sendChat } = useSocket()
   const [playerId, setPlayerId] = useState<string>('')
   // Removed fold-win auto-advance states
 
@@ -49,12 +50,21 @@ export default function GamePage({ params }: Props) {
     prevWinnersRef.current = winners
   }, [winners, playSound])
 
+  // Join game on connect AND reconnect — connected dependency ensures
+  // socket.data gets re-set on the server after any disconnect/reconnect
   useEffect(() => {
-    if (!socket) return
+    if (!socket || !connected) return
     const pid = `human_${gameId}`
     setPlayerId(pid)
     socket.emit('join_game', gameId, pid)
-  }, [socket, gameId])
+  }, [socket, gameId, connected])
+
+  // Redirect to home if game doesn't exist (stale URL / server restart)
+  useEffect(() => {
+    if (error && error.toLowerCase().includes('not found')) {
+      window.location.href = '/'
+    }
+  }, [error])
 
   // Hand results now require manual confirmation via ResultModal
 
@@ -103,24 +113,29 @@ export default function GamePage({ params }: Props) {
 
       <div className="relative z-10 min-h-screen py-4 sm:py-6">
         <div className="max-w-7xl mx-auto px-4 lg:px-8">
-          {/* Top bar with background image */}
-          <div className="relative mb-5 overflow-hidden rounded-xl border-2 border-[#FFD700]/30 shadow-lg">
+          {/* Top bar — Golden-Flop style */}
+          <div className="relative mb-3 sm:mb-5 overflow-hidden rounded-lg sm:rounded-xl border-2 border-[#FFD700]/20 shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
             <img src="/images/topbar-bg.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-black/30" />
-            <div className="relative z-10 flex items-center justify-between px-6 py-3">
-              <button
-                onClick={() => router.push('/')}
-                className="font-pixel text-[10px] text-[#FFD700] hover:text-[#FFD700]/80 bg-black/40 border border-[#FFD700]/30 rounded-lg px-4 py-2 transition-all active:scale-95 tracking-wide shadow-md"
-              >
-                &larr; LOBBY
-              </button>
-              <h1 className="font-pixel font-bold text-[14px] sm:text-[18px] text-[#FFD700] tracking-[3px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+            <div className="absolute inset-0 bg-black/40" />
+            <div className="relative z-10 flex items-center justify-between px-3 sm:px-5 py-2 sm:py-3">
+              {/* Left: Room ID + status */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full shrink-0 ${connected ? 'bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.7)]' : 'bg-red-400 shadow-[0_0_6px_rgba(239,68,68,0.5)]'}`} />
+                <span className="font-pixel text-[6px] sm:text-[7px] text-white/40 tracking-wide">{gameId.slice(0, 6)}</span>
+              </div>
+
+              {/* Center: Title */}
+              <h1 className="font-pixel font-bold text-[10px] sm:text-[16px] text-[#FFD700] tracking-[2px] sm:tracking-[3px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                 POKER LLM
               </h1>
-              <div className="flex items-center gap-3 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">
-                <div className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.7)]' : 'bg-red-400'}`} />
-                <span className="font-pixel text-[8px] text-white/50">{gameId.slice(0, 8)}</span>
-              </div>
+
+              {/* Right: Leave button (red like Golden-Flop) */}
+              <button
+                onClick={() => router.push('/')}
+                className="font-pixel text-[7px] sm:text-[8px] text-white bg-[rgba(180,30,30,0.92)] border-[1.5px] border-[#FF4444] rounded-lg px-2.5 sm:px-4 py-1.5 sm:py-2.5 transition-all active:scale-95 hover:brightness-110 tracking-wide shadow-[0_0_10px_rgba(255,0,0,0.2)]"
+              >
+                LEAVE
+              </button>
             </div>
           </div>
 
@@ -136,6 +151,8 @@ export default function GamePage({ params }: Props) {
             playerId={playerId}
             thinkingId={thinkingId}
             winners={winners}
+            aiReflections={aiReflections}
+            chatBubbles={chatBubbles}
             onAction={handleAction}
             onNextRound={() => nextRound(gameId)}
           />
@@ -144,21 +161,11 @@ export default function GamePage({ params }: Props) {
         </div>
       </div>
 
-      {/* Bottom-right audio controls */}
-      <div className="fixed bottom-4 right-4 z-30 flex items-center gap-2">
-        <button onClick={toggleSound} className="w-10 h-10 active:scale-90 transition-transform">
-          <img
-            src={soundOn ? '/images/sound-on.png' : '/images/sound-off.png'}
-            alt="Sound" className="w-full h-full object-contain"
-          />
-        </button>
-        <button onClick={toggleMusic} className="w-10 h-10 active:scale-90 transition-transform">
-          <img
-            src={musicOn ? '/images/music-button-on.png' : '/images/music-button-off.png'}
-            alt="Music" className="w-full h-full object-contain"
-          />
-        </button>
-      </div>
+      {/* Live chat panel — bottom-left */}
+      <ChatPanel
+        chatLog={chatLog}
+        onSend={(msg) => sendChat(gameId, msg)}
+      />
     </main>
   )
 }
