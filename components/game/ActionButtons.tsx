@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import type { PlayerAction, ClientGameState } from '@/types/poker'
 
 interface Props {
@@ -23,7 +23,7 @@ function ImageButton({ src, pressedSrc, alt, onClick, disabled, children, classN
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`relative group flex-1 min-h-[56px] overflow-hidden rounded-xl transition-all
+      className={`relative group flex-1 min-h-[44px] sm:min-h-[56px] overflow-hidden rounded-lg sm:rounded-xl transition-all
         ${disabled ? 'opacity-35 cursor-not-allowed' : 'active:scale-95 hover:brightness-110'}
         ${className ?? ''}`}
     >
@@ -45,12 +45,41 @@ function ImageButton({ src, pressedSrc, alt, onClick, disabled, children, classN
       )}
       {/* Text overlay */}
       {children && (
-        <span className="relative z-10 flex items-center justify-center w-full h-full min-h-[56px] font-pixel text-[9px] tracking-[1px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+        <span className="relative z-10 flex items-center justify-center w-full h-full min-h-[44px] sm:min-h-[56px] font-pixel text-[7px] sm:text-[9px] tracking-[1px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
           {children}
         </span>
       )}
     </button>
   )
+}
+
+// Hook for press-and-hold: fires callback on press, then repeatedly while held
+function useHoldRepeat(callback: () => void, initialDelay = 400, repeatInterval = 80) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stop = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+  }, [])
+
+  const start = useCallback(() => {
+    callback() // fire immediately on press
+    timerRef.current = setTimeout(() => {
+      intervalRef.current = setInterval(callback, repeatInterval)
+    }, initialDelay)
+  }, [callback, initialDelay, repeatInterval])
+
+  // Cleanup on unmount
+  useEffect(() => stop, [stop])
+
+  return {
+    onMouseDown: start,
+    onMouseUp: stop,
+    onMouseLeave: stop,
+    onTouchStart: (e: React.TouchEvent) => { e.preventDefault(); start() },
+    onTouchEnd: stop,
+  }
 }
 
 export function ActionButtons({ gameState, playerId, onAction }: Props) {
@@ -66,16 +95,39 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
   const minRaise   = gameState.currentBet * 2 || gameState.bigBlind * 2
   const maxRaise   = player.stack + player.bet
   const zeroStack  = player.stack <= 0
+  const bb         = gameState.bigBlind
 
-  // Pre-computed raise presets
+  // Snap a value to the nearest big-blind increment, clamped to [minRaise, maxRaise]
+  const snap = (v: number): number => {
+    const rounded = Math.round(v / bb) * bb
+    return Math.max(minRaise, Math.min(maxRaise, rounded))
+  }
+
+  // Pre-computed raise presets using standard pot-relative sizing:
+  // "X pot" = call the current bet, then raise by X * (pot after calling)
   const presets = useMemo(() => {
-    const pot = gameState.pot
-    return [
-      { label: '1/2 POT', amount: Math.max(minRaise, Math.round(pot / 2)) },
-      { label: '3/4 POT', amount: Math.max(minRaise, Math.round(pot * 3 / 4)) },
-      { label: 'POT',     amount: Math.max(minRaise, pot) },
-    ].filter(p => p.amount <= maxRaise)
-  }, [gameState.pot, minRaise, maxRaise])
+    const potAfterCall = gameState.pot + callAmount
+    const raw = [
+      { label: '1/2 POT', amount: snap(gameState.currentBet + Math.round(potAfterCall * 0.5)) },
+      { label: '3/4 POT', amount: snap(gameState.currentBet + Math.round(potAfterCall * 0.75)) },
+      { label: 'POT',     amount: snap(gameState.currentBet + potAfterCall) },
+    ]
+    // Only show presets that produce distinct values and fit within max
+    const seen = new Set<number>()
+    return raw.filter(p => {
+      if (p.amount > maxRaise || seen.has(p.amount)) return false
+      seen.add(p.amount)
+      return true
+    })
+  }, [gameState.pot, gameState.currentBet, callAmount, minRaise, maxRaise, bb])
+
+  // Press-and-hold handlers for raise +/- buttons
+  const decrementBind = useHoldRepeat(
+    useCallback(() => setRaiseAmount(a => snap((a || minRaise) - bb)), [minRaise, bb])
+  )
+  const incrementBind = useHoldRepeat(
+    useCallback(() => setRaiseAmount(a => snap((a || minRaise) + bb)), [minRaise, bb])
+  )
 
   if (!isMyTurn || player.folded || gameState.phase === 'showdown' || gameState.phase === 'ended') {
     return (
@@ -88,8 +140,8 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
   }
 
   function handleRaise() {
-    const amount = raiseAmount || minRaise
-    onAction('raise', Math.min(amount, maxRaise))
+    const amount = snap(raiseAmount || minRaise)
+    onAction('raise', amount)
     setShowRaise(false)
     setRaiseAmount(0)
   }
@@ -97,7 +149,7 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
   return (
     <div className="flex flex-col items-center gap-3">
       {/* Main action buttons row */}
-      <div className="flex gap-4 w-full max-w-2xl">
+      <div className="flex gap-2 sm:gap-4 w-full max-w-2xl">
         {/* FOLD */}
         <ImageButton
           src="/images/buttons/fold-btn.png"
@@ -143,16 +195,16 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
 
       {/* Raise slider panel */}
       {showRaise && (
-        <div className="relative w-full max-w-lg overflow-hidden rounded-xl border-2 border-[#FFD700]/30 shadow-lg animate-fade-up">
+        <div className="relative w-full max-w-sm sm:max-w-lg overflow-hidden rounded-xl border-2 border-[#FFD700]/30 shadow-lg animate-fade-up">
           {/* Raise input background */}
           <img
             src="/images/raise-input-bg.png"
             alt=""
-            className="absolute inset-0 w-full h-full object-cover opacity-80"
+            className="absolute inset-0 w-full h-full object-cover opacity-80 pointer-events-none"
             draggable={false}
           />
           {/* Dark overlay for readability */}
-          <div className="absolute inset-0 bg-black/60" />
+          <div className="absolute inset-0 bg-black/60 pointer-events-none" />
           <div className="relative z-10 p-4 space-y-4">
             {/* Presets */}
             <div className="flex gap-2 justify-center">
@@ -172,33 +224,33 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
 
             {/* Slider + input */}
             <div className="flex items-center gap-3">
-              {/* Minus button */}
+              {/* Minus button — press-and-hold supported */}
               <button
-                onClick={() => setRaiseAmount(a => Math.max(minRaise, (a || minRaise) - gameState.bigBlind))}
-                className="w-9 h-9 active:scale-90 transition-transform"
+                {...decrementBind}
+                className="w-9 h-9 active:scale-90 transition-transform select-none touch-none"
               >
-                <img src="/images/btn-minus.png" alt="-" className="w-full h-full object-contain" draggable={false} />
+                <img src="/images/btn-minus.png" alt="-" className="w-full h-full object-contain pointer-events-none" draggable={false} />
               </button>
 
               <input
                 type="range"
                 min={minRaise}
                 max={maxRaise}
-                step={gameState.bigBlind}
+                step={bb}
                 value={raiseAmount || minRaise}
-                onChange={e => setRaiseAmount(Number(e.target.value))}
+                onChange={e => setRaiseAmount(snap(Number(e.target.value)))}
                 className="flex-1 h-2 rounded-full appearance-none bg-black/45 border border-white/10
                            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
                            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#FFD700] [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(255,215,0,0.5)]
                            [&::-webkit-slider-thumb]:cursor-pointer"
               />
 
-              {/* Plus button */}
+              {/* Plus button — press-and-hold supported */}
               <button
-                onClick={() => setRaiseAmount(a => Math.min(maxRaise, (a || minRaise) + gameState.bigBlind))}
-                className="w-9 h-9 active:scale-90 transition-transform"
+                {...incrementBind}
+                className="w-9 h-9 active:scale-90 transition-transform select-none touch-none"
               >
-                <img src="/images/btn-plus.png" alt="+" className="w-full h-full object-contain" draggable={false} />
+                <img src="/images/btn-plus.png" alt="+" className="w-full h-full object-contain pointer-events-none" draggable={false} />
               </button>
 
               <input
@@ -208,16 +260,10 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
                 value={raiseAmount || minRaise}
                 onChange={e => {
                   const val = Number(e.target.value)
-                  setRaiseAmount(isNaN(val) || val < 0 ? minRaise : val)
+                  if (!isNaN(val) && val >= 0) setRaiseAmount(val)
                 }}
-                onBlur={() => {
-                  setRaiseAmount(a => {
-                    if (isNaN(a) || a < minRaise) return minRaise
-                    if (a > maxRaise) return maxRaise
-                    return a
-                  })
-                }}
-                className="w-28 bg-black/70 border-2 border-[#FFD700]/30 rounded-lg px-2 py-2 text-white font-pixel text-[11px] text-center
+                onBlur={() => setRaiseAmount(a => snap(isNaN(a) ? minRaise : a))}
+                className="w-20 sm:w-28 bg-black/70 border-2 border-[#FFD700]/30 rounded-lg px-2 py-2 text-white font-pixel text-[9px] sm:text-[11px] text-center
                            focus:outline-none focus:border-[#FFD700]/80"
               />
             </div>
