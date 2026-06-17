@@ -18,18 +18,14 @@ const BLIND_PRESETS: BlindPreset[] = [
 ]
 
 interface Props {
-  name:          string
   startingStack: number
   smallBlind:    number
   bigBlind:      number
-  onNameChange:  (name: string) => void
   onStackChange: (stack: number, sb: number, bb: number) => void
-  watchOnly?:    boolean
 }
 
 export function PlayerSetup({
-  name, startingStack, smallBlind, bigBlind,
-  onNameChange, onStackChange, watchOnly,
+  startingStack, smallBlind, bigBlind, onStackChange,
 }: Props) {
   const activePreset = BLIND_PRESETS.find(
     p => p.stack === startingStack && p.sb === smallBlind && p.bb === bigBlind
@@ -37,26 +33,6 @@ export function PlayerSetup({
 
   return (
     <div className="space-y-5">
-      {/* Name */}
-      {!watchOnly && (
-        <div className="space-y-2">
-          <label className="font-pixel text-[10px] text-[#FFD700] uppercase tracking-[2px] block">
-            Your Name
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={e => onNameChange(e.target.value)}
-            placeholder="Enter your name..."
-            maxLength={20}
-            spellCheck={false}
-            className="w-full bg-black/45 border-2 border-[#FFD700]/25 rounded-xl px-4 py-3.5 text-white font-pixel text-[11px]
-                       placeholder-white/20 focus:outline-none focus:border-[#FFD700]/80 focus:shadow-[0_0_16px_rgba(255,215,0,0.25)] transition-all duration-200
-                       shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)]"
-          />
-        </div>
-      )}
-
       {/* Stack + Blind presets */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
