@@ -57,3 +57,8 @@ next-env.d.ts
 backdate-commits.sh
 /public/music/
 /public/videos/
+
+/lib/generated/prisma
+
+# AI permanent memory (contains game data, generated at runtime)
+/data/

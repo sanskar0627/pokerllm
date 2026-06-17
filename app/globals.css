@@ -58,9 +58,22 @@ body {
   to   { transform: rotate(360deg); }
 }
 
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 0.7; }
+}
+
 @keyframes bounce-dot {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-4px); }
+}
+
+@keyframes chat-bubble-in {
+  0%   { opacity: 0; transform: translate(-50%, 8px) scale(0.8); }
+  15%  { opacity: 1; transform: translate(-50%, -2px) scale(1.03); }
+  30%  { transform: translate(-50%, 0) scale(1); }
+  85%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -4px) scale(0.95); }
 }
 
 @keyframes deal {
@@ -89,11 +102,15 @@ body {
 }
 
 .animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
+  animation: spin-slow 8s linear infinite;
 }
 
 .animate-deal {
   animation: deal 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-chat-bubble-in {
+  animation: chat-bubble-in 4s ease-out forwards;
 }
 
 /* ─── Scrollbar ───────────────────────────────────────────────────────── */
@@ -154,5 +171,115 @@ body {
 
 .animate-fall {
   animation: fall 12s linear infinite;
+}
+
+/* ─── Dust particles — ambient floating gold specs ───────────────────── */
+@keyframes dust-float {
+  0%   { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+  15%  { opacity: 0.7; }
+  50%  { transform: translateY(-60px) translateX(20px) scale(1.2); opacity: 0.5; }
+  85%  { opacity: 0.3; }
+  100% { transform: translateY(-120px) translateX(-10px) scale(0.8); opacity: 0; }
+}
+
+.animate-dust {
+  animation: dust-float var(--dust-duration, 6s) ease-in-out infinite;
+  animation-delay: var(--dust-delay, 0s);
+}
+
+/* ─── Chip sweep — coins fly from pot to winner ──────────────────────── */
+@keyframes chip-sweep {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  60%  { transform: translate(var(--sweep-x, 100px), var(--sweep-y, -80px)) scale(0.8); opacity: 0.9; }
+  100% { transform: translate(var(--sweep-x, 100px), var(--sweep-y, -80px)) scale(0.5); opacity: 0; }
+}
+
+.animate-chip-sweep {
+  animation: chip-sweep 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* ─── Countdown number pulse ─────────────────────────────────────────── */
+@keyframes countdown-pulse {
+  0%   { transform: scale(1.6); opacity: 0; }
+  30%  { transform: scale(1); opacity: 1; }
+  80%  { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0; }
+}
+
+.animate-countdown {
+  animation: countdown-pulse 1s ease-out forwards;
+}
+
+/* ─── Glow timer colors — green→yellow→red based on urgency ──────────── */
+@keyframes glow-green {
+  0%, 100% { box-shadow: 0 0 12px rgba(0,255,136,0.5), 0 0 24px rgba(0,255,136,0.25); }
+  50%      { box-shadow: 0 0 24px rgba(0,255,136,0.8), 0 0 40px rgba(0,255,136,0.4); }
+}
+
+@keyframes glow-yellow {
+  0%, 100% { box-shadow: 0 0 12px rgba(255,215,0,0.5), 0 0 24px rgba(255,215,0,0.25); }
+  50%      { box-shadow: 0 0 24px rgba(255,215,0,0.8), 0 0 40px rgba(255,215,0,0.4); }
+}
+
+@keyframes glow-red {
+  0%, 100% { box-shadow: 0 0 12px rgba(255,68,68,0.5), 0 0 24px rgba(255,68,68,0.25); }
+  50%      { box-shadow: 0 0 24px rgba(255,68,68,0.8), 0 0 40px rgba(255,68,68,0.4); }
+}
+
+.animate-glow-green  { animation: glow-green 1.5s ease-in-out infinite; }
+.animate-glow-yellow { animation: glow-yellow 1.2s ease-in-out infinite; }
+.animate-glow-red    { animation: glow-red 0.8s ease-in-out infinite; }
+
+/* ─── Slide in from right (win toast) ────────────────────────────────── */
+@keyframes slide-in-right {
+  0%   { transform: translateX(120%); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-out-right {
+  0%   { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-out-right {
+  animation: slide-out-right 0.3s ease-in forwards;
+}
+
+/* ─── Coin stack bounce ──────────────────────────────────────────────── */
+@keyframes coin-bounce {
+  0%   { transform: translateY(10px) scale(0.9); opacity: 0; }
+  60%  { transform: translateY(-3px) scale(1.05); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.animate-coin-bounce {
+  animation: coin-bounce 0.35s ease-out forwards;
+}
+
+/* ─── Card flash transition ────────────────────────────────────────── */
+@keyframes cardFanIn {
+  0%   { opacity: 0; transform: translate(-50%, 80px) scale(0.4) rotate(0deg); }
+  60%  { opacity: 1; transform: translate(-50%, calc(var(--card-y) - 2px)) scale(1.04) rotate(var(--card-rot)); }
+  100% { opacity: 1; transform: translate(-50%, var(--card-y)) scale(1) rotate(var(--card-rot)); }
+}
+
+@keyframes goldFlash {
+  0%   { opacity: 0; }
+  50%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes logoFadeIn {
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bgCardFloat {
+  0%   { opacity: 0; filter: blur(4px); }
+  100% { opacity: 0.12; filter: blur(2px); }
 }
 
