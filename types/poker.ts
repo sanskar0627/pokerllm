@@ -120,12 +120,14 @@ export interface PlayerStats {
 export interface GameState {
   id:             string
   userId:         string              // authenticated user who created this game (for AI memory scoping)
+  watchOnly:      boolean             // true = spectator mode (all AI cards visible to viewer)
   phase:          GamePhase
   players:        Player[]
   deck:           Card[]
   communityCards: Card[]
   pot:            number
   currentBet:     number
+  lastRaiseSize:  number            // min raise increment (for short all-in rules)
   currentTurnIdx: number
   dealerIdx:      number
   smallBlindIdx:  number
@@ -160,7 +162,7 @@ export type ClientPlayer = Omit<Player, 'cards'> & {
   cards: Card[] | '??'[]
 }
 
-export type ClientGameState = Omit<GameState, 'deck'> & {
+export type ClientGameState = Omit<GameState, 'deck' | 'handHistory' | 'playerStats'> & {
   players: ClientPlayer[]
 }
 
@@ -172,6 +174,27 @@ export interface AIChatMessage {
   ts:         number      // timestamp
 }
 
+// AI error/status notifications shown to the user in-game
+export interface AIStatusPayload {
+  playerId:    string       // which AI had the issue
+  playerName:  string       // display name
+  type:        'error' | 'rate_limit' | 'timeout' | 'fallback' | 'circuit_open'
+  message:     string       // human-readable description
+  ts:          number
+}
+
+// AI thinking log entry — sent to watch-mode clients after each AI decision
+export interface AIThinkingEntry {
+  playerId:   string
+  playerName: string
+  model:      AIModel
+  action:     PlayerAction
+  amount:     number
+  thinking:   string       // the AI's reasoning text
+  phase:      GamePhase    // which betting round
+  ts:         number
+}
+
 export interface ServerToClientEvents {
   game_state:      (state: ClientGameState) => void
   game_created:    (gameId: string) => void
@@ -180,6 +203,17 @@ export interface ServerToClientEvents {
   game_over:       (winners: WinnerInfo[]) => void
   ai_reflections:  (payload: AIReflectionPayload) => void
   ai_chat:         (msg: AIChatMessage) => void
+  turn_timer:      (payload: TurnTimerPayload) => void
+  ai_status:       (payload: AIStatusPayload) => void
+  ai_thinking_log: (entry: AIThinkingEntry) => void
+}
+
+// Turn timer — sent to clients so they can render a countdown
+export interface TurnTimerPayload {
+  playerId:    string   // whose turn it is
+  totalMs:     number   // total time allowed (120000ms)
+  remainingMs: number   // ms remaining right now
+  phase:       'running' | 'warning' | 'expired'  // warning = last 10s
 }
 
 export interface ClientToServerEvents {
@@ -188,6 +222,7 @@ export interface ClientToServerEvents {
   create_game:   (opts: CreateGameOptions) => void
   next_round:    (gameId: string) => void
   send_chat:     (payload: { gameId: string; message: string }) => void
+  leave_game:    (gameId: string) => void
 }
 
 export interface ActionPayload {
