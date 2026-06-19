@@ -31,8 +31,11 @@ export function createDeck(): Card[] {
 
 export function shuffleDeck(deck: Card[]): Card[] {
   const d = [...deck]
+  // Cryptographically secure Fisher-Yates shuffle
+  const rng = new Uint32Array(d.length)
+  crypto.getRandomValues(rng)
   for (let i = d.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = rng[i] % (i + 1)
     ;[d[i], d[j]] = [d[j], d[i]]
   }
   return d
@@ -130,12 +133,14 @@ export function createGame(opts: CreateGameOptions, gameId: string, userId: stri
   return {
     id:             gameId,
     userId,
+    watchOnly:      opts.watchOnly,
     phase:          'waiting',
     players,
     deck:           shuffleDeck(createDeck()),   // fresh deck (draw deck discarded)
     communityCards: [],
     pot:            0,
     currentBet:     0,
+    lastRaiseSize:  opts.bigBlind,
     currentTurnIdx: 0,
     dealerIdx,
     smallBlindIdx,
@@ -206,6 +211,7 @@ export function dealHoleCards(state: GameState): GameState {
     deck,
     pot,
     currentBet:     bb,
+    lastRaiseSize:  state.bigBlind,   // min raise = 1 BB at start of hand
     currentTurnIdx: firstTurnIdx,
     lastActionAt:   now,
     log: [
@@ -240,6 +246,7 @@ export function advancePhase(state: GameState): GameState {
     ...state,
     players,
     currentBet:     0,
+    lastRaiseSize:  state.bigBlind,   // reset min raise to 1 BB each street
     currentTurnIdx: firstIdx,
     lastActionAt:   Date.now(),
   }
@@ -273,6 +280,7 @@ export function processAction(
   let players = [...state.players]
   let pot = state.pot
   let currentBet = state.currentBet
+  let lastRaiseSize = state.lastRaiseSize
   let chipsMoved = 0
   const now = Date.now()
 
@@ -321,12 +329,26 @@ export function processAction(
     }
     pot += owed
     chipsMoved = owed
-    currentBet = players[playerIdx].bet
 
-    // A raise re-opens action for everyone else
-    players = players.map((p, i) =>
-      i === playerIdx ? p : { ...p, hasActed: p.folded || !p.isActive ? p.hasActed : false }
-    )
+    const newBet = players[playerIdx].bet
+    const raiseIncrement = newBet - currentBet
+
+    // ── Short all-in rule: a raise only re-opens action if it meets the
+    //    minimum raise size. A short all-in (player goes all-in for less
+    //    than a full raise) does NOT reopen betting for players who have
+    //    already acted. This prevents exploiting short stacks to create
+    //    extra betting rounds.
+    const isFullRaise = raiseIncrement >= state.lastRaiseSize
+    currentBet = newBet
+
+    if (isFullRaise) {
+      // Full raise: update min raise size and reopen action for everyone
+      lastRaiseSize = raiseIncrement
+      players = players.map((p, i) =>
+        i === playerIdx ? p : { ...p, hasActed: p.folded || !p.isActive ? p.hasActed : false }
+      )
+    }
+    // Short all-in: currentBet increases but action does NOT reopen
   }
 
   // Always log the incremental chips moved (what the player actually put in this action)
@@ -345,6 +367,7 @@ export function processAction(
       players,
       pot,
       currentBet,
+      lastRaiseSize,
       phase:          'showdown',
       currentTurnIdx: players.findIndex(p => p.id === activePlayers[0].id),
       log:            newLog,
@@ -357,6 +380,7 @@ export function processAction(
     players,
     pot,
     currentBet,
+    lastRaiseSize,
     log:          newLog,
     lastActionAt: now,
   }
@@ -611,6 +635,7 @@ export function rotateBlinds(state: GameState): GameState {
     communityCards: [],
     pot:            0,
     currentBet:     0,
+    lastRaiseSize:  state.bigBlind,
     currentTurnIdx: 0,
     dealerIdx,
     smallBlindIdx,
@@ -632,6 +657,11 @@ export function buildClientState(
 ): ClientGameState {
   const players: ClientPlayer[] = state.players.map(p => {
     const { cards, ...rest } = p
+    // Watch mode: spectator sees ALL cards (AIs can't see this — their prompts
+    // are built server-side from GameState, not from what the client sees)
+    if (state.watchOnly) {
+      return { ...rest, cards }
+    }
     // You always see your own cards
     if (p.id === requestingPlayerId) {
       return { ...rest, cards }
@@ -643,6 +673,14 @@ export function buildClientState(
     return { ...rest, cards: p.cards.map(() => '??') as '??'[] }
   })
 
-  const { deck: _deck, players: _players, ...rest } = state
+  // Strip server-only fields: deck (cards), handHistory (past showdown cards),
+  // playerStats (bluff detection, behavioral analysis — AI-only data)
+  const {
+    deck: _deck,
+    players: _players,
+    handHistory: _handHistory,
+    playerStats: _playerStats,
+    ...rest
+  } = state
   return { ...rest, players } as ClientGameState
 }

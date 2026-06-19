@@ -129,6 +129,60 @@ export function getBestHand(holeCards: Card[], communityCards: Card[]): HandResu
   return best!
 }
 
+// ─── Side pot calculation ────────────────────────────────────────────────────
+//
+// When players go all-in for different amounts, the pot must be split into
+// layers. Each layer (pot) is contested only by players who contributed to it.
+//
+// Algorithm:
+//   1. Collect all players who put chips in (totalBet > 0), including folded ones.
+//      Folded players contributed chips but can't win.
+//   2. Get unique bet levels sorted ascending.
+//   3. For each level, calculate the "layer" each contributor put into that slice.
+//   4. Each pot is won by the best hand among ELIGIBLE players (non-folded,
+//      contributed at least up to that level).
+
+interface SidePot {
+  amount:      number    // total chips in this pot
+  eligibleIds: string[]  // player IDs who can win this pot (non-folded, contributed enough)
+}
+
+function buildSidePots(state: GameState): SidePot[] {
+  // All players who invested chips (including folded — they contributed but can't win)
+  const contributors = state.players
+    .filter(p => p.isActive && p.totalBet > 0)
+
+  if (contributors.length === 0) return []
+
+  // Unique bet levels, ascending
+  const levels = [...new Set(contributors.map(p => p.totalBet))].sort((a, b) => a - b)
+
+  const pots: SidePot[] = []
+  let previousLevel = 0
+
+  for (const level of levels) {
+    const layerPerPlayer = level - previousLevel
+    if (layerPerPlayer <= 0) continue
+
+    // Count how many players contributed at least up to this level
+    const contributorsAtThisLevel = contributors.filter(p => p.totalBet >= level)
+    const potAmount = layerPerPlayer * contributorsAtThisLevel.length
+
+    // Only non-folded players who bet at least this much can win
+    const eligible = contributorsAtThisLevel
+      .filter(p => !p.folded)
+      .map(p => p.id)
+
+    if (potAmount > 0) {
+      pots.push({ amount: potAmount, eligibleIds: eligible })
+    }
+
+    previousLevel = level
+  }
+
+  return pots
+}
+
 // ─── Showdown winner determination ───────────────────────────────────────────
 
 export function determineWinners(state: GameState): WinnerInfo[] {
@@ -148,27 +202,68 @@ export function determineWinners(state: GameState): WinnerInfo[] {
   if (contenders.length === 0) return []
 
   // Evaluate each contender's best hand
-  const evaluated = contenders.map(p => ({
-    player: p,
-    result: getBestHand(p.cards, state.communityCards),
-  }))
+  const evaluated = new Map(
+    contenders.map(p => [p.id, { player: p, result: getBestHand(p.cards, state.communityCards) }])
+  )
 
-  // Find the best hand among all contenders
-  let best = evaluated[0].result
-  for (const e of evaluated) {
-    if (compareHands(e.result, best) < 0) best = e.result
+  // Build side pots
+  const pots = buildSidePots(state)
+
+  // If side pot calculation somehow produces nothing (shouldn't happen),
+  // fall back to simple split of the entire pot
+  if (pots.length === 0) {
+    const best = [...evaluated.values()].reduce((a, b) =>
+      compareHands(a.result, b.result) <= 0 ? a : b
+    )
+    return [{ playerId: best.player.id, handName: best.result.name, amount: state.pot }]
   }
 
-  // All players who match the best hand (split pot)
-  const winners = evaluated.filter(e => compareHands(e.result, best) === 0)
+  // For each pot, find the winner(s) among eligible players
+  const winnings = new Map<string, { amount: number; handName: string }>()
 
-  const share     = Math.floor(state.pot / winners.length)
-  const remainder = state.pot - share * winners.length
+  for (const pot of pots) {
+    // Eligible players who are also contenders (non-folded)
+    const eligible = pot.eligibleIds
+      .map(id => evaluated.get(id))
+      .filter(Boolean) as { player: typeof contenders[0]; result: HandResult }[]
 
-  return winners.map((w, i) => ({
-    playerId: w.player.id,
-    handName: w.result.name,
-    // Give remainder chip to the first winner (closest to dealer is conventional)
-    amount:   i === 0 ? share + remainder : share,
+    if (eligible.length === 0) {
+      // All eligible players folded (pot goes to remaining contender with best hand)
+      // This can happen if a player goes all-in, then folds (impossible in real poker
+      // but defensively handled). Give to the overall best hand among all contenders.
+      const fallback = [...evaluated.values()].reduce((a, b) =>
+        compareHands(a.result, b.result) <= 0 ? a : b
+      )
+      const prev = winnings.get(fallback.player.id) ?? { amount: 0, handName: fallback.result.name }
+      winnings.set(fallback.player.id, { amount: prev.amount + pot.amount, handName: fallback.result.name })
+      continue
+    }
+
+    // Find the best hand among eligible players for this pot
+    let best = eligible[0].result
+    for (const e of eligible) {
+      if (compareHands(e.result, best) < 0) best = e.result
+    }
+
+    // All eligible players who tie for best hand
+    const potWinners = eligible.filter(e => compareHands(e.result, best) === 0)
+    const share = Math.floor(pot.amount / potWinners.length)
+    const remainder = pot.amount - share * potWinners.length
+
+    for (let i = 0; i < potWinners.length; i++) {
+      const pw = potWinners[i]
+      const prev = winnings.get(pw.player.id) ?? { amount: 0, handName: pw.result.name }
+      winnings.set(pw.player.id, {
+        amount: prev.amount + share + (i === 0 ? remainder : 0),
+        handName: pw.result.name,
+      })
+    }
+  }
+
+  // Convert to WinnerInfo array
+  return [...winnings.entries()].map(([playerId, { amount, handName }]) => ({
+    playerId,
+    handName,
+    amount,
   }))
 }
