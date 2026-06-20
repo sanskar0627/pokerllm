@@ -3,7 +3,7 @@ import { Server } from 'socket.io'
 import next from 'next'
 import { nanoid } from 'nanoid'
 
-import { getGame, setGame, deleteGame, getAllGames } from '@/lib/store'
+import { getGame, setGame, setGameForce, deleteGame, getAllGames, rehydrateFromRedis } from '@/lib/store'
 import {
   createGame,
   dealHoleCards,
@@ -12,9 +12,11 @@ import {
   rotateBlinds,
 } from '@/lib/gameEngine'
 import { determineWinners } from '@/lib/handEvaluator'
-import { getAIDecision, logAIConnectionStatus, reflectOnHand, clearGameMemory, getGameMemories, addChatMessage } from '@/lib/llmOrchestrator'
+import { getAIDecision, logAIConnectionStatus, reflectOnHand, clearGameMemory, getGameMemories, addChatMessage, rehydrateAIMemory, type AIDecisionResult } from '@/lib/llmOrchestrator'
 import { promoteGameLearnings } from '@/lib/permanentMemory'
 import { getSocketSession } from '@/lib/socketAuth'
+import { cleanupUnverifiedUsers } from '@/lib/cleanup'
+import { prisma } from '@/lib/db'
 
 import type {
   ServerToClientEvents,
@@ -24,6 +26,9 @@ import type {
   GameState,
   AIModel,
   AIReflectionPayload,
+  TurnTimerPayload,
+  AIStatusPayload,
+  AIThinkingEntry,
 } from '@/types/poker'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -37,6 +42,12 @@ const MAX_GAMES_PER_IP  = 5           // max concurrent games per IP
 const GAME_TTL_MS       = 60 * 60 * 1000  // 1 hour — abandoned games cleaned up
 const RATE_WINDOW_MS    = 10_000      // 10 seconds
 const RATE_MAX_CREATES  = 3           // max create_game per socket per window
+
+// ─── Turn timers ─────────────────────────────────────────────────────────────
+const HUMAN_TURN_MS     = 120_000     // 2 minutes total for human
+const AI_TURN_MS        = 120_000     // 2 minutes total for AI (visual countdown)
+const TURN_WARNING_MS   = 10_000      // last 10 seconds = warning phase
+const TIMER_TICK_MS     = 1_000       // emit countdown every 1s during warning
 
 // ─── Input validators ─────────────────────────────────────────────────────────
 
@@ -71,6 +82,48 @@ function sanitizeName(raw: unknown): string | null {
   ]
   if (INJECTION_TRIGGERS.some(t => lower.includes(t))) return null
   return cleaned
+}
+
+/** Sanitize human chat messages to prevent LLM prompt injection.
+ *  - Strips HTML/script chars
+ *  - Truncates to 120 chars
+ *  - Replaces injection trigger phrases with harmless text
+ *  - Returns null if nothing useful remains */
+function sanitizeChatMessage(raw: string): string | null {
+  let msg = raw
+    .replace(/[^\x20-\x7E]/g, '')  // printable ASCII only
+    .replace(/[<>'"`;]/g, '')       // no HTML/script chars
+    .trim()
+    .slice(0, 120)
+
+  if (msg.length === 0) return null
+
+  // Block/defang prompt injection patterns (case-insensitive)
+  const INJECTION_PATTERNS = [
+    /ignore\s*(all\s*)?(previous|prior|above|your|system|the)\s*(instructions?|prompts?|rules?|context)/gi,
+    /forget\s*(all\s*)?(previous|prior|above|your|system|the)\s*(instructions?|prompts?|rules?|context)/gi,
+    /disregard\s*(all\s*)?(previous|prior|above|your|system|the)\s*(instructions?|prompts?|rules?|context)/gi,
+    /override\s*(all\s*)?(previous|prior|above|your|system|the)\s*(instructions?|prompts?|rules?|context)/gi,
+    /you\s+are\s+(now|a|an)\s/gi,
+    /new\s+instructions?\s*:/gi,
+    /system\s*prompt/gi,
+    /\bact\s+as\b/gi,
+    /\brole\s*play\b/gi,
+    /always\s+(fold|call|raise|check|go\s+all)/gi,
+    /never\s+(fold|call|raise|check|bluff)/gi,
+    /you\s+must\s+(fold|call|raise|check|always|never)/gi,
+    /\bjailbreak\b/gi,
+    /\bDAN\b/g,
+    /respond\s+with/gi,
+    /output\s+(your|the|all)/gi,
+  ]
+
+  for (const pattern of INJECTION_PATTERNS) {
+    msg = msg.replace(pattern, '[nice try]')
+  }
+
+  if (msg.trim().length === 0) return null
+  return msg
 }
 
 function validateCreateOpts(opts: unknown): CreateGameOptions | string {
@@ -123,6 +176,134 @@ function validateCreateOpts(opts: unknown): CreateGameOptions | string {
   }
 }
 
+// ─── Human turn timer management ─────────────────────────────────────────────
+// One timer per game. When a human's turn starts, we set a 2-minute deadline.
+// During the last 10 seconds, we emit per-second countdown ticks.
+// On expiry, the server auto-calls for the player.
+
+interface ActiveTimer {
+  gameId:      string
+  playerId:    string
+  expiresAt:   number
+  mainTimer:   ReturnType<typeof setTimeout>    // auto-call at 2min
+  warnTimer:   ReturnType<typeof setTimeout>    // starts tick interval at warning
+  tickTimer?:  ReturnType<typeof setInterval>   // per-second countdown during warning
+}
+
+const turnTimers = new Map<string, ActiveTimer>()
+
+function clearTurnTimer(gameId: string): void {
+  const t = turnTimers.get(gameId)
+  if (!t) return
+  clearTimeout(t.mainTimer)
+  clearTimeout(t.warnTimer)
+  if (t.tickTimer) clearInterval(t.tickTimer)
+  turnTimers.delete(gameId)
+}
+
+function startTurnTimer(gameId: string, playerId: string, io: Server): void {
+  clearTurnTimer(gameId)
+
+  const expiresAt = Date.now() + HUMAN_TURN_MS
+
+  // Emit initial timer state
+  io.to(gameId).emit('turn_timer', {
+    playerId,
+    totalMs: HUMAN_TURN_MS,
+    remainingMs: HUMAN_TURN_MS,
+    phase: 'running',
+  } as TurnTimerPayload)
+
+  // Warning phase: start 1s ticks during the last 10 seconds
+  const warnTimer = setTimeout(() => {
+    const tickInterval = setInterval(() => {
+      const remaining = Math.max(0, expiresAt - Date.now())
+      io.to(gameId).emit('turn_timer', {
+        playerId,
+        totalMs: HUMAN_TURN_MS,
+        remainingMs: remaining,
+        phase: remaining <= 0 ? 'expired' : 'warning',
+      } as TurnTimerPayload)
+      if (remaining <= 0) clearInterval(tickInterval)
+    }, TIMER_TICK_MS)
+
+    const existing = turnTimers.get(gameId)
+    if (existing) existing.tickTimer = tickInterval
+  }, HUMAN_TURN_MS - TURN_WARNING_MS)
+
+  // Main timer: auto-call after full duration
+  const mainTimer = setTimeout(async () => {
+    clearTurnTimer(gameId)
+
+    await withGameLock(gameId, async () => {
+      // Guard: don't auto-act if an AI turn is currently processing
+      if (aiTurnActive.has(gameId)) return
+
+      const state = getGame(gameId)
+      if (!state || state.phase === 'showdown' || state.phase === 'ended') return
+
+      const currentPlayer = state.players[state.currentTurnIdx]
+      if (!currentPlayer || currentPlayer.id !== playerId || currentPlayer.isAI) return
+
+      io.to(gameId).emit('turn_timer', {
+        playerId, totalMs: HUMAN_TURN_MS, remainingMs: 0, phase: 'expired',
+      } as TurnTimerPayload)
+
+      const callAmt = Math.max(0, state.currentBet - currentPlayer.bet)
+      const autoAction: 'check' | 'call' = callAmt === 0 ? 'check' : 'call'
+      console.log(`[timer] ⏰ ${currentPlayer.name} timed out — auto-${autoAction}`)
+
+      let next: GameState
+      try {
+        next = processAction(state, playerId, autoAction, 0)
+      } catch {
+        try { next = processAction(state, playerId, 'fold', 0) }
+        catch { return }
+      }
+
+      setGame(gameId, next)
+
+      if (next.phase === 'showdown') {
+        await handleShowdown(gameId, io)
+      } else {
+        await broadcastGameState(gameId, io, next)
+        await triggerAITurn(gameId, io)
+      }
+    })
+  }, HUMAN_TURN_MS)
+
+  turnTimers.set(gameId, { gameId, playerId, expiresAt, mainTimer, warnTimer })
+}
+
+// ─── Persist game result to database ──────────────────────────────────────
+
+async function saveGameRecord(
+  state: GameState,
+  result: 'win' | 'loss' | 'abandoned',
+): Promise<void> {
+  try {
+    if (!state.userId) return // watch-only or missing userId — skip
+
+    const models = state.players
+      .filter(p => p.isAI && p.model)
+      .map(p => p.model as string)
+
+    await prisma.gameRecord.create({
+      data: {
+        userId:  state.userId,
+        gameId:  state.id,
+        models,
+        rounds:  state.roundNumber,
+        result,
+      },
+    })
+    console.log(`[db] 💾 Saved GameRecord for ${state.id} — result: ${result}, rounds: ${state.roundNumber}`)
+  } catch (err) {
+    // Non-fatal: don't crash the game loop over a DB write failure
+    console.error(`[db] ❌ Failed to save GameRecord for ${state.id}:`, (err as Error).message)
+  }
+}
+
 // ─── Game helpers ─────────────────────────────────────────────────────────────
 
 async function broadcastGameState(gameId: string, io: Server, state: GameState): Promise<void> {
@@ -131,10 +312,81 @@ async function broadcastGameState(gameId: string, io: Server, state: GameState):
     const pid = (socket.data as { playerId?: string }).playerId ?? ''
     socket.emit('game_state', buildClientState(state, pid))
   }
+  // Start turn timer if the current turn is a human player
+  maybeStartTurnTimer(gameId, state, io)
+}
+
+/** Start the turn timer for both human AND AI players. */
+function maybeStartTurnTimer(gameId: string, state: GameState, io: Server): void {
+  if (state.phase === 'showdown' || state.phase === 'ended' || state.phase === 'waiting') {
+    clearTurnTimer(gameId)
+    return
+  }
+  const current = state.players[state.currentTurnIdx]
+  if (!current || current.folded || !current.isActive) {
+    clearTurnTimer(gameId)
+    return
+  }
+  if (current.isAI) {
+    // For AI turns: emit a single timer event so the client can show the countdown.
+    // The actual timeout is handled by the API call timeout (120s). No server-side
+    // auto-action needed — the AI loop handles failures via try/catch fallback.
+    clearTurnTimer(gameId)
+    io.to(gameId).emit('turn_timer', {
+      playerId: current.id,
+      totalMs: AI_TURN_MS,
+      remainingMs: AI_TURN_MS,
+      phase: 'running',
+    } as TurnTimerPayload)
+  } else {
+    startTurnTimer(gameId, current.id, io)
+  }
 }
 
 // Guard against concurrent AI turns on the same game
 const aiTurnActive = new Set<string>()
+
+// ─── Per-game mutex ──────────────────────────────────────────────────────────
+// Prevents race conditions where timer auto-fold, player_action, and AI turns
+// can all mutate the same game state concurrently. Only one mutation runs at
+// a time per game.
+const gameLocks = new Map<string, Promise<void>>()
+
+async function withGameLock<T>(gameId: string, fn: () => Promise<T>): Promise<T> {
+  // Wait for any existing lock on this game to finish
+  const existing = gameLocks.get(gameId) ?? Promise.resolve()
+  let release: () => void
+  const newLock = new Promise<void>(resolve => { release = resolve })
+  gameLocks.set(gameId, newLock)
+
+  try {
+    await existing
+    return await fn()
+  } finally {
+    release!()
+    // Clean up if we're still the latest lock
+    if (gameLocks.get(gameId) === newLock) {
+      gameLocks.delete(gameId)
+    }
+  }
+}
+
+// Track game count per IP + reverse map for cleanup
+const gamesPerIp = new Map<string, Set<string>>()
+const gameToIp   = new Map<string, string>()
+
+/** Remove a gameId from IP tracking maps */
+function cleanupGameIp(gameId: string): void {
+  const ip = gameToIp.get(gameId)
+  if (ip) {
+    const ipGames = gamesPerIp.get(ip)
+    if (ipGames) {
+      ipGames.delete(gameId)
+      if (ipGames.size === 0) gamesPerIp.delete(ip)
+    }
+    gameToIp.delete(gameId)
+  }
+}
 
 async function triggerAITurn(gameId: string, io: Server): Promise<void> {
   if (aiTurnActive.has(gameId)) return   // already processing this game
@@ -150,7 +402,18 @@ async function triggerAITurn(gameId: string, io: Server): Promise<void> {
 
       io.to(gameId).emit('llm_thinking', player.id)
 
-      const payload = await getAIDecision(state, player.id)
+      const payload: AIDecisionResult = await getAIDecision(state, player.id)
+
+      // ── Emit AI status notification if there was an error/fallback ──
+      if (payload._status) {
+        io.to(gameId).emit('ai_status', {
+          playerId: player.id,
+          playerName: player.name,
+          type: payload._status.type,
+          message: payload._status.message,
+          ts: Date.now(),
+        } as AIStatusPayload)
+      }
 
       // Re-read state after the async call — it may have changed
       const fresh = getGame(gameId)
@@ -166,6 +429,20 @@ async function triggerAITurn(gameId: string, io: Server): Promise<void> {
       }
 
       setGame(gameId, next)
+
+      // ── Emit AI thinking log (watch mode: shows reasoning panel) ──
+      if (payload._thinking && fresh.watchOnly) {
+        io.to(gameId).emit('ai_thinking_log', {
+          playerId: player.id,
+          playerName: player.name,
+          model: player.model!,
+          action: payload.action,
+          amount: payload.amount ?? 0,
+          thinking: payload._thinking,
+          phase: fresh.phase,
+          ts: Date.now(),
+        } as AIThinkingEntry)
+      }
 
       // ── Emit AI table talk if the AI said something ──
       if (payload.chat) {
@@ -223,6 +500,7 @@ async function startRound(gameId: string, io: Server): Promise<void> {
 
 async function handleShowdown(gameId: string, io: Server): Promise<void> {
   try {
+    clearTurnTimer(gameId) // no timer during showdown
     let state = getGame(gameId)
     if (!state) return
 
@@ -245,9 +523,14 @@ async function handleShowdown(gameId: string, io: Server): Promise<void> {
     // Reflections are computed and stored in AI memory (feeds into future decisions)
     // but are NOT sent to the client until the game is fully over (prevents human from
     // exploiting AI strategies mid-game).
+    //
+    // Optimization: only reflect every 3 rounds to reduce API costs (~66% fewer
+    // reflection calls). AIs still learn effectively from periodic reflections.
+    const REFLECT_EVERY = 3
+    const shouldReflect = state.roundNumber % REFLECT_EVERY === 0 || state.roundNumber === 1
     const aiPlayers = state.players.filter(p => p.isAI && p.isActive)
-    if (aiPlayers.length > 0) {
-      console.log(`  💭 AIs reflecting on hand (private — not sent to client)...`)
+    if (aiPlayers.length > 0 && shouldReflect) {
+      console.log(`  💭 AIs reflecting on hand (round ${state.roundNumber}, next reflection in ${REFLECT_EVERY} rounds)...`)
       const reflectionPromises = aiPlayers.map(p => reflectOnHand(state, p.id))
       Promise.allSettled(reflectionPromises).then(results => {
         const count = results.filter(r => r.status === 'fulfilled' && r.value).length
@@ -279,6 +562,17 @@ async function handleNextRound(gameId: string, io: Server): Promise<void> {
       const ended = { ...next, phase: 'ended' as const }
       setGame(gameId, ended)
       await broadcastGameState(gameId, io, ended)
+
+      // ── Save game result to database ──
+      const humanPlayer = ended.players.find(p => !p.isAI)
+      const winner = activePlayers[0]
+      if (humanPlayer) {
+        const humanWon = winner?.id === humanPlayer.id
+        await saveGameRecord(ended, humanWon ? 'win' : 'loss')
+      } else {
+        // Watch-only game — still save for history
+        await saveGameRecord(ended, 'win')
+      }
 
       // ── Game over: NOW send all accumulated AI reflections to the client ──
       // This is the ONLY time the human sees AI thinking — game is finished, no exploit possible.
@@ -332,8 +626,9 @@ async function handleNextRound(gameId: string, io: Server): Promise<void> {
         }
       }
 
-      // Clean up temporary game memory
+      // Clean up temporary game memory + IP tracking
       clearGameMemory(gameId)
+      cleanupGameIp(gameId)
       setTimeout(() => deleteGame(gameId), 5 * 60 * 1000)
       console.log(`\n╔════════════════════════════════════════════╗`)
       console.log(`║  GAME OVER: ${gameId} — ${activePlayers[0]?.name ?? 'nobody'} wins!`)
@@ -363,12 +658,24 @@ async function handleNextRound(gameId: string, io: Server): Promise<void> {
 
 // Periodically clean up abandoned games (no action for > 1 hour)
 function startGameReaper() {
-  setInterval(() => {
+  setInterval(async () => {
     const now = Date.now()
     for (const state of getAllGames()) {
       if (now - state.lastActionAt > GAME_TTL_MS) {
-        deleteGame(state.id)
-        console.log(`[reaper] cleaned up stale game ${state.id}`)
+        // Acquire the per-game lock so we don't race with an in-flight
+        // AI turn or player action that's mutating this game.
+        await withGameLock(state.id, async () => {
+          // Re-check after acquiring lock — the game may have had new
+          // activity or been deleted while we were waiting.
+          const fresh = getGame(state.id)
+          if (!fresh || now - fresh.lastActionAt <= GAME_TTL_MS) return
+
+          saveGameRecord(fresh, 'abandoned')
+          cleanupGameIp(fresh.id)
+          clearTurnTimer(fresh.id)
+          deleteGame(fresh.id)
+          console.log(`[reaper] cleaned up stale game ${fresh.id}`)
+        })
       }
     }
   }, 5 * 60 * 1000) // run every 5 minutes
@@ -377,25 +684,28 @@ function startGameReaper() {
 // Periodically clean up unverified users whose tokens have expired
 function startUnverifiedUserCleanup() {
   const CLEANUP_INTERVAL = 15 * 60 * 1000  // every 15 minutes
-  const run = () => {
-    const baseUrl = `http://localhost:3000`
-    fetch(`${baseUrl}/api/cron/cleanup-unverified`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.deletedUsers > 0 || data.deletedTokens > 0) {
-          console.log(`[cron] ${data.message}`)
-        }
-      })
-      .catch(err => console.error('[cron] cleanup fetch failed:', err.message))
+  const run = async () => {
+    try {
+      const result = await cleanupUnverifiedUsers()
+      if (result.deletedUsers > 0 || result.deletedTokens > 0) {
+        console.log(`[cleanup] ${result.message}`)
+      }
+    } catch (err) {
+      console.error('[cleanup] failed:', (err as Error).message)
+    }
   }
-  // First run 1 minute after server starts (wait for Next.js to be ready)
+  // First run 1 minute after server starts
   setTimeout(run, 60_000)
   setInterval(run, CLEANUP_INTERVAL)
 }
 
 // ─── Server bootstrap ─────────────────────────────────────────────────────────
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  // Restore any active games + AI memory from Redis (survives server restarts)
+  await rehydrateFromRedis()
+  await rehydrateAIMemory()
+
   const handle     = app.getRequestHandler()
   const noCachePages = new Set(['/signup', '/login', '/verify'])
   const httpServer = createServer((req, res) => {
@@ -403,11 +713,21 @@ app.prepare().then(() => {
     if (noCachePages.has(pathname)) {
       res.setHeader('Cache-Control', 'no-store')
     }
+    // Security headers on every response (belt-and-suspenders with next.config.ts)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('X-Frame-Options', 'DENY')
+    if (!dev) {
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload')
+    }
     handle(req, res)
   })
 
-  // Lock CORS to localhost (we run on localhost:3000). Override with
-  // ALLOWED_ORIGIN (comma-separated) when deploying to a real domain.
+  // CORS: in production, ALLOWED_ORIGIN must be explicitly set.
+  // In dev, fall back to localhost.
+  if (!dev && !process.env.ALLOWED_ORIGIN) {
+    console.error('❌ FATAL: ALLOWED_ORIGIN env var is required in production. Set it to your domain(s), comma-separated.')
+    process.exit(1)
+  }
   const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? 'http://localhost:3000,http://127.0.0.1:3000')
     .split(',')
     .map(o => o.trim())
@@ -434,15 +754,16 @@ app.prepare().then(() => {
 
   // Track create_game rate per socket: { count, windowStart }
   const createRateMap = new Map<string, { count: number; windowStart: number }>()
-  // Track game count per IP
-  const gamesPerIp    = new Map<string, Set<string>>()
-
   startGameReaper()
   startUnverifiedUserCleanup()
 
   io.on('connection', socket => {
-    const clientIp = (socket.handshake.headers['x-forwarded-for'] as string)?.split(',')[0].trim()
-      ?? socket.handshake.address
+    // Use the direct TCP connection address — x-forwarded-for is trivially
+    // spoofable unless a trusted reverse proxy strips and re-sets it.
+    // When behind a proxy, set TRUSTED_PROXY=1 to read the header.
+    const clientIp = process.env.TRUSTED_PROXY === '1'
+      ? ((socket.handshake.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ?? socket.handshake.address)
+      : socket.handshake.address
 
     console.log(`[socket] connected: ${socket.id} ip: ${clientIp}`)
 
@@ -478,7 +799,7 @@ app.prepare().then(() => {
       const gameId = nanoid(8)
       const userId = (socket.data as { userId?: string }).userId ?? ''
       const state  = createGame(validated, gameId, userId)
-      setGame(gameId, state)
+      setGameForce(gameId, state) // always persist on creation
 
       const playerNames = state.players.map(p => p.name).join(' vs ')
       console.log(`\n╔════════════════════════════════════════════╗`)
@@ -492,6 +813,7 @@ app.prepare().then(() => {
 
       ipGames.add(gameId)
       gamesPerIp.set(clientIp, ipGames)
+      gameToIp.set(gameId, clientIp)
 
       socket.join(gameId)
       const humanPlayerId = validated.watchOnly ? '' : `human_${gameId}`
@@ -523,6 +845,13 @@ app.prepare().then(() => {
 
       if (!state) {
         socket.emit('game_error', `Game ${gameId} not found`)
+        return
+      }
+
+      // ★ Verify game ownership — only the user who created the game can join it
+      const socketUserId = (socket.data as { userId?: string }).userId
+      if (state.userId && socketUserId !== state.userId) {
+        socket.emit('game_error', 'Not your game')
         return
       }
 
@@ -581,32 +910,36 @@ app.prepare().then(() => {
         return
       }
 
-      const state = getGame(gameId)
-      if (!state) { socket.emit('game_error', 'Game not found'); return }
+      await withGameLock(gameId, async () => {
+        const state = getGame(gameId)
+        if (!state) { socket.emit('game_error', 'Game not found'); return }
 
-      // Prevent acting during an AI turn
-      if (aiTurnActive.has(gameId)) {
-        socket.emit('game_error', 'AI is still thinking')
-        return
-      }
+        // Prevent acting during an AI turn
+        if (aiTurnActive.has(gameId)) {
+          socket.emit('game_error', 'AI is still thinking')
+          return
+        }
 
-      let next: GameState
-      try {
-        next = processAction(state, playerId, action, Math.floor(amount))
-      } catch (err) {
-        socket.emit('game_error', (err as Error).message)
-        return
-      }
+        // Human acted — stop their turn timer
+        clearTurnTimer(gameId)
 
-      setGame(gameId, next)
+        let next: GameState
+        try {
+          next = processAction(state, playerId, action, Math.floor(amount))
+        } catch (err) {
+          socket.emit('game_error', (err as Error).message)
+          return
+        }
 
-      if (next.phase === 'showdown') {
-        // Don't broadcast here — handleShowdown broadcasts once WITH winners
-        await handleShowdown(gameId, io)
-      } else {
-        await broadcastGameState(gameId, io, next)
-        await triggerAITurn(gameId, io)
-      }
+        setGame(gameId, next)
+
+        if (next.phase === 'showdown') {
+          await handleShowdown(gameId, io)
+        } else {
+          await broadcastGameState(gameId, io, next)
+          await triggerAITurn(gameId, io)
+        }
+      })
     })
 
     // ── next_round ───────────────────────────────────────────────────────────
@@ -621,7 +954,73 @@ app.prepare().then(() => {
         socket.emit('game_error', 'Not in this game')
         return
       }
-      await handleNextRound(gameId, io)
+
+      // ★ Verify game ownership — only the user who created the game can advance rounds
+      const socketUserId = (socket.data as { userId?: string }).userId
+      const state = getGame(gameId)
+      if (state?.userId && socketUserId !== state.userId) {
+        socket.emit('game_error', 'Not your game')
+        return
+      }
+
+      // Wrap in mutex — prevents double-click race where two calls both see
+      // phase === 'showdown' before either completes. The second call will
+      // wait, then find phase !== 'showdown' and exit harmlessly.
+      await withGameLock(gameId, async () => {
+        await handleNextRound(gameId, io)
+      })
+    })
+
+    // ── leave_game — user clicked LEAVE, end the game immediately ────────────
+    socket.on('leave_game', async (rawGameId: unknown) => {
+      if (!isValidGameId(rawGameId)) return
+      const gameId = rawGameId as string
+      const socketData = socket.data as { playerId?: string; gameId?: string }
+      if (socketData.gameId !== gameId) return
+
+      // Verify ownership
+      const socketUserId = (socket.data as { userId?: string }).userId
+      const state = getGame(gameId)
+      if (!state) return
+      if (state.userId && socketUserId !== state.userId) return
+
+      await withGameLock(gameId, async () => {
+        const fresh = getGame(gameId)
+        if (!fresh) return
+
+        // Mark game as ended
+        const ended = { ...fresh, phase: 'ended' as const }
+        setGame(gameId, ended)
+
+        // Broadcast final state
+        await broadcastGameState(gameId, io, ended)
+
+        // Save game record
+        const humanPlayer = ended.players.find(p => !p.isAI)
+        if (humanPlayer) {
+          await saveGameRecord(ended, 'abandoned')
+        } else {
+          await saveGameRecord(ended, 'abandoned')
+        }
+
+        // Stop AI turns, timers, clean up
+        aiTurnActive.delete(gameId)
+        clearTurnTimer(gameId)
+        clearGameMemory(gameId)
+        cleanupGameIp(gameId)
+
+        // Remove everyone from the socket room
+        const room = io.sockets.adapter.rooms.get(gameId)
+        if (room) {
+          for (const sid of room) {
+            io.sockets.sockets.get(sid)?.leave(gameId)
+          }
+        }
+
+        // Delete game after short delay (allow final state to be received)
+        setTimeout(() => deleteGame(gameId), 5000)
+        console.log(`[game] Player left — ended game ${gameId}`)
+      })
     })
 
     // ── send_chat (human player chat) ──────────────────────────────────────────
@@ -631,8 +1030,8 @@ app.prepare().then(() => {
       if (!isValidGameId(p.gameId) || typeof p.message !== 'string') return
 
       const gameId  = p.gameId as string
-      const message = (p.message as string).slice(0, 120).replace(/[<>"]/g, '')
-      if (!message.trim()) return
+      const message = sanitizeChatMessage((p.message as string))
+      if (!message) return
 
       const socketData = socket.data as { playerId?: string; gameId?: string }
       if (socketData.gameId !== gameId) return
@@ -656,6 +1055,24 @@ app.prepare().then(() => {
 
     socket.on('disconnect', () => {
       createRateMap.delete(socket.id)
+      const socketData = socket.data as { playerId?: string; gameId?: string }
+      const disconnectedGameId = socketData.gameId
+
+      if (disconnectedGameId) {
+        // Pause the game: clear turn timer and mark AI turns as inactive
+        // so the game doesn't silently continue without the human watching
+        clearTurnTimer(disconnectedGameId)
+
+        // Check if this was the last socket in the room
+        const room = io.sockets.adapter.rooms.get(disconnectedGameId)
+        if (!room || room.size === 0) {
+          // No one left watching — pause AI turns by removing the game from active set
+          // (triggerAITurn checks this set, so removing it stops the loop)
+          aiTurnActive.delete(disconnectedGameId)
+          console.log(`[socket] all players left game ${disconnectedGameId} — paused`)
+        }
+      }
+
       console.log(`[socket] disconnected: ${socket.id}`)
     })
   })
@@ -663,4 +1080,46 @@ app.prepare().then(() => {
   httpServer.listen(3000, () => {
     console.log('PokerLLM running on http://localhost:3000')
   })
+
+  // ─── Graceful shutdown ─────────────────────────────────────────────────────
+  // On SIGTERM/SIGINT: persist games, then exit immediately.
+  // In dev mode we skip the AI-turn wait entirely — fast restarts matter more.
+
+  let shuttingDown = false
+
+  async function gracefulShutdown(signal: string) {
+    if (shuttingDown) {
+      // Second Ctrl+C → force exit immediately
+      console.log('\n[shutdown] Forced exit.')
+      process.exit(1)
+    }
+    shuttingDown = true
+    console.log(`\n[shutdown] ${signal} received — shutting down...`)
+
+    // 1. Clear all turn timers immediately
+    for (const gameId of turnTimers.keys()) {
+      clearTurnTimer(gameId)
+    }
+    aiTurnActive.clear()
+
+    // 2. Force-persist all active games to Redis (best-effort, 3s max)
+    try {
+      const games = getAllGames()
+      await Promise.race([
+        Promise.all(games.map(s => setGameForce(s.id, s))),
+        new Promise(r => setTimeout(r, 3000)),
+      ])
+      console.log(`[shutdown] Persisted ${games.length} game(s)`)
+    } catch {
+      console.warn('[shutdown] Redis persist failed — continuing exit')
+    }
+
+    // 3. Exit immediately — don't wait for io.close()/httpServer.close()
+    //    which can hang on open WebSocket connections
+    console.log('[shutdown] Goodbye.')
+    process.exit(0)
+  }
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+  process.on('SIGINT',  () => gracefulShutdown('SIGINT'))
 })
