@@ -1,5 +1,6 @@
 'use client'
 
+import { memo, useRef, useEffect } from 'react'
 import type { ClientPlayer, Card, AIModel } from '@/types/poker'
 import { AI_META } from '@/lib/aiMeta'
 import { ModelLogo } from '@/components/lobby/LLMSelector'
@@ -10,18 +11,23 @@ function getCardImagePath(card: Card): string {
   return `/images/cards/${card.rank}_${card.suit}.png`
 }
 
-function CardFace({ card, delay, large }: { card: Card | '??'; delay?: number; large?: boolean }) {
+// Generate a stable key for a card to detect new vs existing cards
+function cardKey(card: Card | '??'): string {
+  return card === '??' ? 'back' : `${card.rank}_${card.suit}`
+}
+
+function CardFace({ card, delay, large, skipAnimation }: { card: Card | '??'; delay?: number; large?: boolean; skipAnimation?: boolean }) {
   const sizeClass = large
     ? 'w-[52px] h-[73px] sm:w-[68px] sm:h-[95px] lg:w-[76px] lg:h-[106px]'
     : 'w-[38px] h-[53px] sm:w-[50px] sm:h-[70px]'
 
   if (card === '??') {
     return (
-      <div className="animate-deal" style={{ animationDelay: `${delay ?? 0}ms` }}>
+      <div className={skipAnimation ? '' : 'animate-deal'} style={skipAnimation ? undefined : { animationDelay: `${delay ?? 0}ms` }}>
         <img
           src="/images/card-back.png"
           alt="Card back"
-          className={`rounded-md shadow-lg ${sizeClass}`}
+          className={`rounded-md shadow-lg ${sizeClass} will-change-transform`}
           draggable={false}
         />
       </div>
@@ -29,11 +35,11 @@ function CardFace({ card, delay, large }: { card: Card | '??'; delay?: number; l
   }
 
   return (
-    <div className="animate-deal" style={{ animationDelay: `${delay ?? 0}ms` }}>
+    <div className={skipAnimation ? '' : 'animate-deal'} style={skipAnimation ? undefined : { animationDelay: `${delay ?? 0}ms` }}>
       <img
         src={getCardImagePath(card)}
         alt={`${card.rank} of ${card.suit}`}
-        className={`rounded-md shadow-lg ${sizeClass} ${large ? 'shadow-[0_2px_12px_rgba(255,215,0,0.25)]' : ''}`}
+        className={`rounded-md shadow-lg ${sizeClass} will-change-transform ${large ? 'shadow-[0_2px_12px_rgba(255,215,0,0.25)]' : ''}`}
         draggable={false}
       />
     </div>
@@ -137,14 +143,41 @@ interface Props {
   isSelf:       boolean
   isWinner?:    boolean
   chatMessage?: string
+  watchOnly?:   boolean
 }
 
-export function PlayerSeat({ player, isActive, isDealer, isThinking, isSelf, isWinner, chatMessage }: Props) {
+export const PlayerSeat = memo(function PlayerSeat({ player, isActive, isDealer, isThinking, isSelf, isWinner, chatMessage, watchOnly }: Props) {
   const meta = player.isAI && player.model ? AI_META[player.model] : null
+
+  // Track which cards have already been animated to avoid re-triggering on re-render
+  const animatedCardsRef = useRef<Set<string>>(new Set())
+
+  // Determine which cards need animation (only new ones)
+  const cardAnimationState = player.cards.map((card) => {
+    const key = cardKey(card)
+    if (animatedCardsRef.current.has(key)) {
+      return true // skip animation — already shown
+    }
+    return false // needs animation
+  })
+
+  // Mark cards as animated after first render
+  useEffect(() => {
+    player.cards.forEach((card) => {
+      animatedCardsRef.current.add(cardKey(card))
+    })
+  }, [player.cards])
+
+  // Reset animated cards when player folds or new round starts (no cards)
+  useEffect(() => {
+    if (player.cards.length === 0) {
+      animatedCardsRef.current.clear()
+    }
+  }, [player.cards.length])
 
   return (
     <div
-      className={`relative flex flex-col items-center gap-1 transition-all duration-300
+      className={`relative flex flex-col items-center gap-1 transition-all duration-200
         ${player.folded ? 'opacity-30 scale-90' : ''}
         ${isWinner ? 'scale-105' : ''}`}
     >
@@ -170,15 +203,15 @@ export function PlayerSeat({ player, isActive, isDealer, isThinking, isSelf, isW
 
       {/* Cards — shown overlapping slightly under avatar */}
       {player.cards.length > 0 && (
-        <div className={`flex -mt-1 ${isSelf ? 'gap-1.5 sm:gap-2' : 'gap-1'}`}>
+        <div className={`flex -mt-1 ${(isSelf || watchOnly) ? 'gap-1.5 sm:gap-2' : 'gap-1'}`}>
           {player.cards.map((card, i) => (
-            <CardFace key={i} card={card} delay={i * 100} large={isSelf} />
+            <CardFace key={i} card={card} delay={i * 100} large={isSelf || !!watchOnly} skipAnimation={cardAnimationState[i]} />
           ))}
         </div>
       )}
 
       {/* Info pill — name, chips, bet (compact panel below) */}
-      <div className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl border transition-all
+      <div className={`flex flex-col items-center gap-0.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border transition-colors
         ${isWinner
           ? 'bg-[rgba(255,215,0,0.15)] border-[#FFD700]/50 shadow-[0_0_16px_rgba(255,215,0,0.3)]'
           : isActive
@@ -233,4 +266,4 @@ export function PlayerSeat({ player, isActive, isDealer, isThinking, isSelf, isW
       )}
     </div>
   )
-}
+})
