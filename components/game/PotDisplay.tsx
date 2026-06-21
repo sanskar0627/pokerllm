@@ -1,5 +1,7 @@
 'use client'
 
+import { memo } from 'react'
+
 interface Props {
   pot:        number
   currentBet: number
@@ -37,15 +39,15 @@ function CoinStack({ pot, bigBlind }: { pot: number; bigBlind: number }) {
   )
 }
 
-export function PotDisplay({ pot, currentBet, phase, roundNumber, bigBlind = 200 }: Props) {
+export const PotDisplay = memo(function PotDisplay({ pot, currentBet, phase, roundNumber, bigBlind = 200 }: Props) {
   const phaseLabel = phase.toUpperCase()
 
   return (
-    <div className="flex flex-col items-center gap-2.5">
+    <div className="flex flex-col items-center gap-1.5 sm:gap-2.5">
       {/* Phase badge — gold on purple panel like Golden-Flop */}
-      <div className="flex items-center gap-3">
-        <div className="bg-[rgba(81,46,123,0.92)] border-2 border-[#FFD700]/50 rounded-xl px-3 sm:px-5 py-1.5 sm:py-2 shadow-[0_0_16px_rgba(255,215,0,0.2)]">
-          <span className="font-pixel text-[7px] sm:text-[9px] text-[#FFD700] tracking-[2px] sm:tracking-[3px] font-bold">{phaseLabel}</span>
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="bg-[rgba(81,46,123,0.92)] border sm:border-2 border-[#FFD700]/50 rounded-lg sm:rounded-xl px-2.5 sm:px-5 py-1 sm:py-2 shadow-[0_0_16px_rgba(255,215,0,0.2)]">
+          <span className="font-pixel text-[6px] sm:text-[9px] text-[#FFD700] tracking-[2px] sm:tracking-[3px] font-bold">{phaseLabel}</span>
         </div>
         {roundNumber && (
           <span className="font-pixel text-[6px] sm:text-[7px] text-white/30">RD {roundNumber}</span>
@@ -53,14 +55,15 @@ export function PotDisplay({ pot, currentBet, phase, roundNumber, bigBlind = 200
       </div>
 
       {/* Pot + To Call — side by side */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         {/* Pot display */}
-        <div className="flex items-center gap-2 sm:gap-3 bg-black/55 border-2 border-[#FFD700]/50 rounded-full px-4 sm:px-6 py-2 sm:py-3
+        <div className="flex items-center gap-1.5 sm:gap-3 bg-black/55 border sm:border-2 border-[#FFD700]/50 rounded-full px-2.5 sm:px-6 py-1.5 sm:py-3
                         shadow-[0_0_28px_rgba(255,215,0,0.25),_inset_0_2px_8px_rgba(0,0,0,0.5)]">
-          <CoinStack pot={pot} bigBlind={bigBlind} />
+          <div className="hidden sm:block"><CoinStack pot={pot} bigBlind={bigBlind} /></div>
+          <img src="/images/coin.png" alt="" className="w-4 h-4 object-contain sm:hidden" draggable={false} />
           <div className="flex flex-col items-start">
-            <span className="font-pixel text-[5px] sm:text-[6px] text-[#FFD700]/60 tracking-wider">POT</span>
-            <span className="font-pixel text-[12px] sm:text-[16px] text-[#FFD700] tabular-nums drop-shadow-[0_0_10px_rgba(255,215,0,0.5)]">
+            <span className="font-pixel text-[4px] sm:text-[6px] text-[#FFD700]/60 tracking-wider">POT</span>
+            <span className="font-pixel text-[10px] sm:text-[16px] text-[#FFD700] tabular-nums drop-shadow-[0_0_10px_rgba(255,215,0,0.5)]">
               {pot.toLocaleString()}
             </span>
           </div>
@@ -68,11 +71,11 @@ export function PotDisplay({ pot, currentBet, phase, roundNumber, bigBlind = 200
 
         {/* To Call — beside pot */}
         {currentBet > 0 && (
-          <div className="flex items-center gap-2 bg-black/55 border-2 border-[#00FFFF]/40 rounded-full px-4 sm:px-5 py-2 sm:py-3
-                          shadow-[0_0_16px_rgba(0,255,255,0.15),_inset_0_2px_8px_rgba(0,0,0,0.5)] animate-fade-up">
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-black/55 border sm:border-2 border-[#00FFFF]/40 rounded-full px-2.5 sm:px-5 py-1.5 sm:py-3
+                          shadow-[0_0_16px_rgba(0,255,255,0.15),_inset_0_2px_8px_rgba(0,0,0,0.5)]">
             <div className="flex flex-col items-start">
-              <span className="font-pixel text-[5px] sm:text-[6px] text-[#00FFFF]/60 tracking-wider">TO CALL</span>
-              <span className="font-pixel text-[12px] sm:text-[16px] text-[#00FFFF] tabular-nums font-bold drop-shadow-[0_0_10px_rgba(0,255,255,0.4)]">
+              <span className="font-pixel text-[4px] sm:text-[6px] text-[#00FFFF]/60 tracking-wider">TO CALL</span>
+              <span className="font-pixel text-[10px] sm:text-[16px] text-[#00FFFF] tabular-nums font-bold drop-shadow-[0_0_10px_rgba(0,255,255,0.4)]">
                 {currentBet.toLocaleString()}
               </span>
             </div>
@@ -81,4 +84,4 @@ export function PotDisplay({ pot, currentBet, phase, roundNumber, bigBlind = 200
       </div>
     </div>
   )
-}
+})
