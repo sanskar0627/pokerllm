@@ -23,7 +23,7 @@ function ImageButton({ src, pressedSrc, alt, onClick, disabled, children, classN
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`relative group flex-1 min-h-[44px] sm:min-h-[56px] overflow-hidden rounded-lg sm:rounded-xl transition-all
+      className={`relative group flex-1 min-h-[48px] sm:min-h-[56px] overflow-hidden rounded-lg sm:rounded-xl transition-all touch-manipulation
         ${disabled ? 'opacity-35 cursor-not-allowed' : 'active:scale-95 hover:brightness-110'}
         ${className ?? ''}`}
     >
@@ -45,7 +45,7 @@ function ImageButton({ src, pressedSrc, alt, onClick, disabled, children, classN
       )}
       {/* Text overlay */}
       {children && (
-        <span className="relative z-10 flex items-center justify-center w-full h-full min-h-[44px] sm:min-h-[56px] font-pixel text-[7px] sm:text-[9px] tracking-[1px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+        <span className="relative z-10 flex items-center justify-center w-full h-full min-h-[48px] sm:min-h-[56px] font-pixel text-[8px] sm:text-[9px] tracking-[1px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
           {children}
         </span>
       )}
