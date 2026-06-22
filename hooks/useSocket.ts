@@ -9,6 +9,9 @@ import type {
   ClientToServerEvents,
   AIReflectionPayload,
   AIChatMessage,
+  TurnTimerPayload,
+  AIStatusPayload,
+  AIThinkingEntry,
 } from '@/types/poker'
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>
@@ -31,10 +34,14 @@ interface UseSocketReturn {
   aiReflections:   AIReflectionPayload['reflections']
   chatBubbles:     Record<string, string>  // playerId → current chat message
   chatLog:         ChatLogEntry[]           // full chat history for panel
+  turnTimer:       TurnTimerPayload | null  // current turn timer state
+  aiStatusMessages: AIStatusPayload[]       // AI error/limit notifications
+  aiThinkingLog:   AIThinkingEntry[]        // AI thinking entries (watch mode)
   clearWinners:    () => void
   clearError:      () => void
   nextRound:       (gameId: string) => void
   sendChat:        (gameId: string, message: string) => void
+  leaveGame:       (gameId: string) => void
 }
 
 export function useSocket(): UseSocketReturn {
@@ -48,6 +55,9 @@ export function useSocket(): UseSocketReturn {
   const [aiReflections, setAiReflections] = useState<AIReflectionPayload['reflections']>([])
   const [chatBubbles, setChatBubbles] = useState<Record<string, string>>({})
   const [chatLog, setChatLog] = useState<ChatLogEntry[]>([])
+  const [turnTimer, setTurnTimer] = useState<TurnTimerPayload | null>(null)
+  const [aiStatusMessages, setAiStatusMessages] = useState<AIStatusPayload[]>([])
+  const [aiThinkingLog, setAiThinkingLog] = useState<AIThinkingEntry[]>([])
   const chatTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   useEffect(() => {
@@ -108,6 +118,26 @@ export function useSocket(): UseSocketReturn {
         delete chatTimersRef.current[msg.playerId]
       }, 4000)
     })
+    socket.on('turn_timer', (payload: TurnTimerPayload) => {
+      if (payload.phase === 'expired') {
+        // Clear timer after a brief delay so UI can show "0"
+        setTurnTimer(payload)
+        setTimeout(() => setTurnTimer(null), 1500)
+      } else {
+        setTurnTimer(payload)
+      }
+    })
+    socket.on('ai_status', (payload: AIStatusPayload) => {
+      setAiStatusMessages(prev => [...prev, payload])
+      // Auto-dismiss after 6 seconds
+      setTimeout(() => {
+        setAiStatusMessages(prev => prev.filter(m => m.ts !== payload.ts))
+      }, 6000)
+    })
+    socket.on('ai_thinking_log', (entry: AIThinkingEntry) => {
+      // Keep last 30 entries to prevent unbounded growth
+      setAiThinkingLog(prev => [...prev.slice(-29), entry])
+    })
 
     return () => {
       socket.disconnect()
@@ -138,6 +168,10 @@ export function useSocket(): UseSocketReturn {
     socketRef.current?.emit('send_chat', { gameId: gid, message })
   }, [])
 
+  const leaveGame = useCallback((gid: string) => {
+    socketRef.current?.emit('leave_game', gid)
+  }, [])
+
   return {
     socket:     socketRef.current,
     connected,
@@ -149,9 +183,13 @@ export function useSocket(): UseSocketReturn {
     aiReflections,
     chatBubbles,
     chatLog,
+    turnTimer,
+    aiStatusMessages,
+    aiThinkingLog,
     clearWinners,
     clearError,
     nextRound,
     sendChat,
+    leaveGame,
   }
 }
