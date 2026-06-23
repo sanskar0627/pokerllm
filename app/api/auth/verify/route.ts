@@ -1,8 +1,19 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { rateLimit, clientIpFrom } from '@/lib/rateLimit'
 
 export async function GET(req: Request) {
   try {
+    // Rate limit: 10 attempts per minute per IP
+    const ip = clientIpFrom(req)
+    const rl = rateLimit(`verify:${ip}`, 10, 60_000)
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+      )
+    }
+
     const url = new URL(req.url)
     const token = url.searchParams.get('token')
 

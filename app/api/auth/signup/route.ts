@@ -54,16 +54,17 @@ export async function POST(req: Request) {
       )
     }
 
-    // Check if user already exists
+    // Check if user already exists — return the SAME generic response
+    // regardless of whether the email is taken or new (prevents enumeration).
     const existingUser = await prisma.user.findUnique({
       where: { email: trimmedEmail },
     })
 
     if (existingUser) {
-      return NextResponse.json(
-        { error: 'An account with this email already exists' },
-        { status: 409 }
-      )
+      // Don't reveal that the account exists. Return 200 with generic message.
+      return NextResponse.json({
+        message: 'If this email is available, a verification link has been sent.',
+      })
     }
 
     // Hash password and create user
@@ -74,7 +75,6 @@ export async function POST(req: Request) {
         name: trimmedName,
         email: trimmedEmail,
         passwordHash,
-        credits: 100, // signup bonus
       },
     })
 
@@ -90,30 +90,18 @@ export async function POST(req: Request) {
       },
     })
 
-    // Log the signup bonus transaction
-    await prisma.transaction.create({
-      data: {
-        userId: user.id,
-        amount: 100,
-        type: 'signup_bonus',
-        details: 'Welcome bonus — 100 free credits',
-      },
-    })
-
     // Send verification email
     const emailResult = await sendVerificationEmail(trimmedEmail, token)
     if (!emailResult.success) {
-      console.warn(`[Email] Failed to send verification to ${trimmedEmail}, token: ${token}`)
+      console.warn(`[Email] Failed to send verification to ${trimmedEmail}`)
     }
 
-    return NextResponse.json(
-      {
-        message: 'Account created. Please check your email to verify.',
-        // Include token in dev mode for testing
-        ...(process.env.NODE_ENV !== 'production' && { verifyToken: token }),
-      },
-      { status: 201 }
-    )
+    return NextResponse.json({
+      message: 'If this email is available, a verification link has been sent.',
+      // Include token ONLY in explicit development mode for testing.
+      // NODE_ENV must be exactly 'development' — unset or 'staging' won't leak tokens.
+      ...(process.env.NODE_ENV === 'development' && { verifyToken: token }),
+    })
   } catch (error) {
     console.error('Signup error:', error)
     return NextResponse.json(

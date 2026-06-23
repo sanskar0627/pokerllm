@@ -117,25 +117,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  events: {
-    // Give signup bonus when a new user is created via OAuth (Google)
-    async createUser({ user }) {
-      if (user.id) {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { credits: 100 },
-        })
-        await prisma.transaction.create({
-          data: {
-            userId: user.id,
-            amount: 100,
-            type: 'signup_bonus',
-            details: 'Welcome bonus — 100 free credits',
-          },
-        })
-      }
-    },
-  },
+  events: {},
   callbacks: {
     authorized({ auth: session, request: { nextUrl } }) {
       const isLoggedIn = !!session?.user
