@@ -46,10 +46,8 @@ export async function POST(req: Request) {
     }
 
     if (user.emailVerified) {
-      return NextResponse.json(
-        { error: 'Email is already verified' },
-        { status: 400 }
-      )
+      // Don't reveal verification status — return same generic message
+      return NextResponse.json({ message: 'If that email exists, a new verification link has been sent.' })
     }
 
     // Delete any existing tokens for this email
