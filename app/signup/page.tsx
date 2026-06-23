@@ -99,7 +99,6 @@ export default function SignupPage() {
         return
       }
       sessionStorage.setItem('signup_email', email.toLowerCase().trim())
-      sessionStorage.setItem('signup_password', password)
       window.location.href = '/verify?email=' + encodeURIComponent(email.toLowerCase().trim())
     } catch {
       setError('Something went wrong. Please try again.')

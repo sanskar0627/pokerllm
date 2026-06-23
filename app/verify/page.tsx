@@ -84,9 +84,7 @@ function VerifyPageContent() {
       const res = await signIn('verify-token', { token: t, redirect: false })
 
       if (res?.ok) {
-        // Saved signup credentials (if any) are no longer needed
         sessionStorage.removeItem('signup_email')
-        sessionStorage.removeItem('signup_password')
         setStatus('success')
         setMessage('Email verified! Taking you to the table...')
         window.location.href = '/'
@@ -102,30 +100,7 @@ function VerifyPageContent() {
 
   async function autoLogin() {
     setStatus('logging-in')
-
-    const savedEmail = sessionStorage.getItem('signup_email')
-    const savedPassword = sessionStorage.getItem('signup_password')
-
-    if (savedEmail && savedPassword) {
-      try {
-        const res = await signIn('credentials', {
-          email: savedEmail,
-          password: savedPassword,
-          redirect: false,
-        })
-
-        sessionStorage.removeItem('signup_email')
-        sessionStorage.removeItem('signup_password')
-
-        if (res?.ok) {
-          window.location.href = '/'
-          return
-        }
-      } catch {
-        // Fall through to login page
-      }
-    }
-
+    sessionStorage.removeItem('signup_email')
     setMessage('Email verified! Redirecting to login...')
     setTimeout(() => { window.location.href = '/login' }, 1500)
   }
