@@ -36,21 +36,31 @@ const DeepSeekLogo = ({ className = "w-7 h-7" }: { className?: string }) => (
   </svg>
 )
 
+const GroqLogo = ({ className = "w-7 h-7" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 1.5C6.201 1.5 1.5 6.201 1.5 12S6.201 22.5 12 22.5 22.5 17.799 22.5 12 17.799 1.5 12 1.5zm0 2.25a8.25 8.25 0 110 16.5 8.25 8.25 0 010-16.5z" fill="currentColor"/>
+    <path d="M12 6.75a5.25 5.25 0 100 10.5 5.25 5.25 0 000-10.5zm0 2.25a3 3 0 110 6 3 3 0 010-6z" fill="currentColor"/>
+    <path d="M18.75 11.25h-3v1.5h3v3h1.5v-3a1.5 1.5 0 00-1.5-1.5z" fill="currentColor"/>
+  </svg>
+)
+
 export function ModelLogo({ id, className }: { id: string; className?: string }) {
   if (id === 'claude') return <ClaudeLogo className={className} />
   if (id === 'chatgpt') return <ChatGPTLogo className={className} />
   if (id === 'gemini') return <GeminiLogo className={className} />
   if (id === 'grok') return <GrokLogo className={className} />
   if (id === 'deepseek') return <DeepSeekLogo className={className} />
+  if (id === 'groq') return <GroqLogo className={className} />
   return null
 }
 
 interface Props {
   selected: AIModel[]
   onChange: (models: AIModel[]) => void
+  watchOnly?: boolean
 }
 
-export function LLMSelector({ selected, onChange }: Props) {
+export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
   function toggle(id: AIModel) {
     onChange(
       selected.includes(id)
@@ -123,8 +133,11 @@ export function LLMSelector({ selected, onChange }: Props) {
         })}
       </div>
 
-      {selected.length === 0 && (
-        <p className="font-pixel text-[8px] text-red-400 text-center mt-2 tracking-wide">SELECT AT LEAST ONE AI PLAYER</p>
+      {watchOnly && selected.length < 2 && (
+        <p className="font-pixel text-[7px] sm:text-[8px] text-amber-400 text-center mt-2 tracking-wide">WATCH MODE REQUIRES AT LEAST 2 AI PLAYERS</p>
+      )}
+      {!watchOnly && selected.length === 0 && (
+        <p className="font-pixel text-[7px] sm:text-[8px] text-red-400 text-center mt-2 tracking-wide">SELECT AT LEAST ONE AI PLAYER</p>
       )}
     </div>
   )
