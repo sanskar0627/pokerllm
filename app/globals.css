@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Press+Start+2P&display=swap');
 @import "tailwindcss";
 
 /* ─── Theme variables ─────────────────────────────────────────────────── */
@@ -12,19 +11,34 @@
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────── */
+html {
+  /* Prevent iOS overscroll bounce */
+  overscroll-behavior: none;
+}
+
 body {
   background: var(--purple-deep);
   color: white;
   overflow-x: hidden;
+  /* Mobile: prevent text size adjustment */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Safe area padding for notched phones */
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
+/* Touch optimization: remove 300ms tap delay */
+a, button, input, select, textarea {
+  touch-action: manipulation;
 }
 
 /* ─── Utility font classes ────────────────────────────────────────────── */
 .font-game {
-  font-family: 'Chakra Petch', sans-serif;
+  font-family: var(--font-chakra-petch), 'Chakra Petch', sans-serif;
 }
 
 .font-pixel {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--font-press-start), 'Press Start 2P', monospace;
 }
 
 /* ─── Animations ──────────────────────────────────────────────────────── */
@@ -68,6 +82,53 @@ body {
   50%      { transform: translateY(-4px); }
 }
 
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(1.08); }
+}
+
+@keyframes thinking-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-thinking-slide-up {
+  animation: thinking-slide-up 0.35s ease-out;
+}
+
+/* ─── ThinkingPanel scroll — hidden by default, visible on hover ──────── */
+.thinking-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.3s ease;
+}
+
+.thinking-scroll:hover {
+  scrollbar-color: rgba(255, 215, 0, 0.3) transparent;
+}
+
+.thinking-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.thinking-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thinking-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px;
+  transition: background 0.3s ease;
+}
+
+.thinking-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 215, 0, 0.3);
+}
+
+.thinking-scroll:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 215, 0, 0.5);
+}
+
 @keyframes chat-bubble-in {
   0%   { opacity: 0; transform: translate(-50%, 8px) scale(0.8); }
   15%  { opacity: 1; transform: translate(-50%, -2px) scale(1.03); }
@@ -106,7 +167,8 @@ body {
 }
 
 .animate-deal {
-  animation: deal 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  animation: deal 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  will-change: transform, opacity;
 }
 
 .animate-chat-bubble-in {
