@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
-import Link from 'next/link'
 import { useSocket } from '@/hooks/useSocket'
 import { LLMSelector } from '@/components/lobby/LLMSelector'
 import { GameModeToggle } from '@/components/lobby/GameModeToggle'
@@ -149,7 +148,7 @@ function CyclingAIText() {
 export default function HomePage() {
   const router = useRouter()
   const { data: session, status } = useSession()
-  const { socket, gameId } = useSocket()
+  const { socket, gameId, error: socketError } = useSocket()
 
   const [screen, setScreen] = useState<Screen>('home')
   const [transitioning, setTransitioning] = useState(false)
@@ -170,6 +169,13 @@ export default function HomePage() {
     }
   }, [gameId])
 
+  // Reset creating state on socket error (so button becomes clickable again)
+  useEffect(() => {
+    if (socketError && creating) {
+      setCreating(false)
+    }
+  }, [socketError, creating])
+
   function handlePlayClick() {
     setTransitioning(true)
     setTransitionVisible(true)
@@ -182,8 +188,12 @@ export default function HomePage() {
     }, 1800)
   }
 
+  // Watch mode needs 2+ AIs (they play each other). Play mode needs 1+.
+  const minAIs = watchOnly ? 2 : 1
+  const canStart = socket && selectedAIs.length >= minAIs && !creating
+
   function handleCreate() {
-    if (!socket || selectedAIs.length === 0) return
+    if (!canStart) return
     setCreating(true)
 
     // Use the authenticated user's name from session
@@ -276,10 +286,24 @@ export default function HomePage() {
               </div>
 
               {/* User info bar */}
-              <div className="opacity-0 animate-fade-up flex items-center gap-3" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
-                <span className="font-game text-[12px] text-white/50">
-                  {session.user?.name || session.user?.email}
-                </span>
+              <div className="opacity-0 animate-fade-up flex items-center gap-3 z-20" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
+                <a
+                  href="/profile"
+                  className="flex items-center gap-2 group touch-manipulation relative z-20"
+                >
+                  <div className="w-7 h-7 rounded-full bg-[#FFD700]/10 border border-[#FFD700]/30 flex items-center justify-center shrink-0 group-hover:border-[#FFD700]/60 transition-colors overflow-hidden">
+                    {session.user?.image ? (
+                      <img src={session.user.image} alt="" className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <span className="font-pixel text-[8px] text-[#FFD700]">
+                        {(session.user?.name ?? session.user?.email)?.[0]?.toUpperCase() ?? '?'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-game text-[12px] text-white/50 group-hover:text-white/70 transition-colors">
+                    {session.user?.name || session.user?.email}
+                  </span>
+                </a>
                 <button
                   onClick={() => signOut()}
                   className="font-game text-[11px] text-white/30 hover:text-white/60 transition-colors underline underline-offset-2"
@@ -461,12 +485,27 @@ export default function HomePage() {
               &larr; BACK
             </button>
             <h2 className="font-pixel text-[9px] sm:text-[11px] text-[#FFD700] tracking-[2px] sm:tracking-[3px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">GAME SETUP</h2>
-            <button
-              onClick={() => signOut({ callbackUrl: '/login' })}
-              className="font-pixel text-[8px] sm:text-[10px] text-red-400/80 hover:text-white bg-black/40 hover:bg-red-600 border border-red-500/30 hover:border-red-500 rounded-lg px-3 sm:px-4 py-1.5 sm:py-2 transition-all duration-200 active:scale-95 tracking-wide shadow-md hover:shadow-[0_0_16px_rgba(239,68,68,0.35)]"
-            >
-              LOGOUT
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <a
+                href="/profile"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#FFD700]/10 border border-[#FFD700]/30 flex items-center justify-center shrink-0 hover:border-[#FFD700]/60 transition-colors touch-manipulation overflow-hidden"
+                title="Profile"
+              >
+                {session?.user?.image ? (
+                  <img src={session.user.image} alt="" className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  <span className="font-pixel text-[7px] sm:text-[8px] text-[#FFD700]">
+                    {(session?.user?.name ?? session?.user?.email)?.[0]?.toUpperCase() ?? '?'}
+                  </span>
+                )}
+              </a>
+              <button
+                onClick={() => signOut({ callbackUrl: '/login' })}
+                className="font-pixel text-[8px] sm:text-[10px] text-red-400/80 hover:text-white bg-black/40 hover:bg-red-600 border border-red-500/30 hover:border-red-500 rounded-lg px-3 sm:px-4 py-1.5 sm:py-2 transition-all duration-200 active:scale-95 tracking-wide shadow-md hover:shadow-[0_0_16px_rgba(239,68,68,0.35)]"
+              >
+                LOGOUT
+              </button>
+            </div>
           </div>
 
           {/* Panel */}
@@ -485,14 +524,14 @@ export default function HomePage() {
             />
 
             {/* AI selector */}
-            <LLMSelector selected={selectedAIs} onChange={setSelectedAIs} />
+            <LLMSelector selected={selectedAIs} onChange={setSelectedAIs} watchOnly={watchOnly} />
 
             {/* Create button */}
             <button
               onClick={handleCreate}
-              disabled={creating || selectedAIs.length === 0}
+              disabled={!canStart}
               className={`w-full py-4.5 rounded-xl font-pixel text-[12px] tracking-[2px] transition-all duration-200 shadow-[0_4px_12px_rgba(0,0,0,0.3)] active:scale-95
-                ${creating || selectedAIs.length === 0
+                ${!canStart
                   ? 'bg-white/10 text-white/30 cursor-not-allowed border border-white/10'
                   : 'bg-gradient-to-b from-[#FFD700] to-[#B8860B] text-[#1a0a2e] border-2 border-[#FFD700] hover:shadow-[0_0_24px_rgba(255,215,0,0.45)] hover:brightness-105 active:brightness-95'
                 }`}
