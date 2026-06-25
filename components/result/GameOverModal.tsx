@@ -183,8 +183,8 @@ export function GameOverModal({ players, playerId, aiReflections }: Props) {
   const hasReflections = groupedReflections.length > 0
 
   return (
-    <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4 backdrop-blur-md overflow-y-auto">
-      <div className="bg-[rgba(26,10,46,0.96)] border-[3px] border-[#FFD700] rounded-2xl overflow-hidden max-w-lg w-full my-4
+    <div className="fixed inset-0 bg-black/85 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 backdrop-blur-md overflow-y-auto">
+      <div className="bg-[rgba(26,10,46,0.96)] border-t-[3px] sm:border-[3px] border-[#FFD700] rounded-t-2xl sm:rounded-2xl overflow-hidden max-w-lg w-full sm:my-4 max-h-[90dvh] sm:max-h-[90vh] overflow-y-auto
                       shadow-[0_0_48px_rgba(255,215,0,0.4)] animate-fade-up">
         {/* Decorative gold line */}
         <div className="w-full h-1 bg-[#FFD700]" />
@@ -262,7 +262,7 @@ export function GameOverModal({ players, playerId, aiReflections }: Props) {
           {/* Return to Lobby button */}
           <button
             onClick={() => router.push('/')}
-            className="relative w-full h-13 overflow-hidden rounded-xl active:scale-[0.97] hover:scale-[1.01] hover:brightness-105 duration-200 transition-all shadow-lg"
+            className="relative w-full h-12 sm:h-13 overflow-hidden rounded-xl active:scale-[0.97] hover:scale-[1.01] hover:brightness-105 duration-200 transition-all shadow-lg touch-manipulation"
           >
             <img
               src="/images/buttons/play-btn.png"

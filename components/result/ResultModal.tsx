@@ -100,15 +100,15 @@ export function ResultModal({ winners, players, onClose }: Props) {
   const totalWon = winners.reduce((s, w) => s + w.amount, 0)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
     >
       {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/75" />
 
-      {/* Modal */}
+      {/* Modal — full width bottom sheet on mobile, centered on desktop */}
       <div
-        className="relative w-full max-w-lg overflow-hidden rounded-2xl transition-all duration-500"
+        className="relative w-full sm:max-w-lg overflow-hidden rounded-t-2xl sm:rounded-2xl transition-all duration-500 max-h-[85dvh] sm:max-h-[90vh] overflow-y-auto"
         style={{
           opacity: show ? 1 : 0,
           transform: show ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(20px)',
@@ -253,7 +253,7 @@ export function ResultModal({ winners, players, onClose }: Props) {
           })()}
 
           {/* ── Continue button ── */}
-          <div className="p-6 pt-5">
+          <div className="p-4 sm:p-6 pt-5" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))' }}>
             <button
               onClick={onClose}
               className="group relative w-full py-3.5 rounded-xl overflow-hidden font-pixel text-[10px] sm:text-[11px] tracking-[3px]
