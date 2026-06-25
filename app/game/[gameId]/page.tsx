@@ -1,21 +1,23 @@
 'use client'
 
 import { use, useEffect, useState, useRef } from 'react'
-import { useRouter }                from 'next/navigation'
+import { useSession }               from 'next-auth/react'
+import Link                         from 'next/link'
 import { useSocket }                from '@/hooks/useSocket'
 import { useAudio }                 from '@/hooks/useAudio'
 import { PokerTable }               from '@/components/game/PokerTable'
 import { ChatPanel }                from '@/components/game/ChatPanel'
+import { ThinkingPanel }            from '@/components/game/ThinkingPanel'
 import type { PlayerAction, WinnerInfo } from '@/types/poker'
 
 type Props = { params: Promise<{ gameId: string }> }
 
 export default function GamePage({ params }: Props) {
   const { gameId } = use(params)
-  const router = useRouter()
+  const { data: session } = useSession()
   const { playSound } = useAudio()
 
-  const { socket, connected, gameState, winners, thinkingId, error, nextRound, aiReflections, chatBubbles, chatLog, sendChat } = useSocket()
+  const { socket, connected, gameState, winners, thinkingId, error, nextRound, aiReflections, chatBubbles, chatLog, turnTimer, aiStatusMessages, aiThinkingLog, sendChat, leaveGame } = useSocket()
   const [playerId, setPlayerId] = useState<string>('')
   // Removed fold-win auto-advance states
 
@@ -111,31 +113,50 @@ export default function GamePage({ params }: Props) {
       />
       <div className="absolute inset-0 bg-black/35" />
 
-      <div className="relative z-10 min-h-screen py-4 sm:py-6">
-        <div className="max-w-7xl mx-auto px-4 lg:px-8">
+      <div className="relative z-10 min-h-screen min-h-[100dvh] py-2 sm:py-6">
+        <div className={`max-w-7xl mx-auto px-2 sm:px-4 lg:px-8`}>
           {/* Top bar — Golden-Flop style */}
-          <div className="relative mb-3 sm:mb-5 overflow-hidden rounded-lg sm:rounded-xl border-2 border-[#FFD700]/20 shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="relative mb-2 sm:mb-5 overflow-hidden rounded-lg sm:rounded-xl border border-[#FFD700]/20 sm:border-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
             <img src="/images/topbar-bg.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/40" />
-            <div className="relative z-10 flex items-center justify-between px-3 sm:px-5 py-2 sm:py-3">
+            <div className="relative z-10 flex items-center justify-between px-2.5 sm:px-5 py-1.5 sm:py-3">
               {/* Left: Room ID + status */}
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full shrink-0 ${connected ? 'bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.7)]' : 'bg-red-400 shadow-[0_0_6px_rgba(239,68,68,0.5)]'}`} />
-                <span className="font-pixel text-[6px] sm:text-[7px] text-white/40 tracking-wide">{gameId.slice(0, 6)}</span>
+              <div className="flex items-center gap-1.5 sm:gap-3">
+                <div className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.7)]' : 'bg-red-400 shadow-[0_0_6px_rgba(239,68,68,0.5)]'}`} />
+                <span className="font-pixel text-[5px] sm:text-[7px] text-white/40 tracking-wide">{gameId.slice(0, 6)}</span>
               </div>
 
               {/* Center: Title */}
-              <h1 className="font-pixel font-bold text-[10px] sm:text-[16px] text-[#FFD700] tracking-[2px] sm:tracking-[3px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+              <h1 className="font-pixel font-bold text-[9px] sm:text-[16px] text-[#FFD700] tracking-[2px] sm:tracking-[3px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                 POKER LLM
               </h1>
 
-              {/* Right: Leave button (red like Golden-Flop) */}
-              <button
-                onClick={() => router.push('/')}
-                className="font-pixel text-[7px] sm:text-[8px] text-white bg-[rgba(180,30,30,0.92)] border-[1.5px] border-[#FF4444] rounded-lg px-2.5 sm:px-4 py-1.5 sm:py-2.5 transition-all active:scale-95 hover:brightness-110 tracking-wide shadow-[0_0_10px_rgba(255,0,0,0.2)]"
-              >
-                LEAVE
-              </button>
+              {/* Right: Avatar + Leave */}
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <Link
+                  href="/profile"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#FFD700]/10 border border-[#FFD700]/30 flex items-center justify-center shrink-0 hover:border-[#FFD700]/60 transition-colors touch-manipulation overflow-hidden"
+                  title="Profile"
+                >
+                  {session?.user?.image ? (
+                    <img src={session.user.image} alt="" className="w-full h-full rounded-full object-cover" />
+                  ) : (
+                    <span className="font-pixel text-[7px] sm:text-[8px] text-[#FFD700]">
+                      {(session?.user?.name ?? session?.user?.email)?.[0]?.toUpperCase() ?? '?'}
+                    </span>
+                  )}
+                </Link>
+                <button
+                  onClick={() => {
+                    leaveGame(gameId)
+                    // Use window.location for reliable navigation (router.push can be flaky)
+                    setTimeout(() => { window.location.href = '/' }, 150)
+                  }}
+                  className="font-pixel text-[6px] sm:text-[8px] text-white bg-[rgba(180,30,30,0.92)] border border-[#FF4444] rounded-lg px-2 sm:px-4 py-1.5 sm:py-2.5 transition-all active:scale-95 hover:brightness-110 tracking-wide shadow-[0_0_10px_rgba(255,0,0,0.2)] touch-manipulation min-h-[32px] sm:min-h-0"
+                >
+                  LEAVE
+                </button>
+              </div>
             </div>
           </div>
 
@@ -146,26 +167,97 @@ export default function GamePage({ params }: Props) {
             </div>
           )}
 
-          <PokerTable
-            gameState={gameState}
-            playerId={playerId}
-            thinkingId={thinkingId}
-            winners={winners}
-            aiReflections={aiReflections}
-            chatBubbles={chatBubbles}
-            onAction={handleAction}
-            onNextRound={() => nextRound(gameId)}
-          />
+          {/* Main content: table + optional thinking panel */}
+          <div>
+            <div className="w-full">
+              <PokerTable
+                gameState={gameState}
+                playerId={playerId}
+                thinkingId={thinkingId}
+                winners={winners}
+                aiReflections={aiReflections}
+                chatBubbles={chatBubbles}
+                turnTimer={turnTimer}
+                onAction={handleAction}
+                onNextRound={() => nextRound(gameId)}
+              />
+            </div>
+
+            {/* ThinkingPanel rendered as fixed overlay below */}
+          </div>
 
           {/* Fold wins now render the standard ResultModal */}
         </div>
       </div>
+
+      {/* AI Status Toasts — top-right corner */}
+      {aiStatusMessages.length > 0 && (
+        <div className="fixed top-14 right-2 sm:top-16 sm:right-4 z-50 flex flex-col gap-2 max-w-[320px] sm:max-w-[380px]">
+          {aiStatusMessages.map((msg) => {
+            const isRateLimit = msg.type === 'rate_limit'
+            const isTimeout = msg.type === 'timeout'
+            const isCircuit = msg.type === 'circuit_open'
+            const borderColor = isRateLimit ? 'border-amber-500/40' : isTimeout ? 'border-orange-500/40' : isCircuit ? 'border-red-500/40' : 'border-red-500/30'
+            const iconColor = isRateLimit ? 'text-amber-400' : isTimeout ? 'text-orange-400' : 'text-red-400'
+            const bgColor = isRateLimit ? 'bg-amber-500/10' : isTimeout ? 'bg-orange-500/10' : 'bg-red-500/10'
+
+            return (
+              <div
+                key={msg.ts}
+                className={`${bgColor} border ${borderColor} backdrop-blur-md rounded-lg px-3 py-2.5 sm:px-4 sm:py-3 shadow-[0_4px_20px_rgba(0,0,0,0.5)] animate-slide-in-right`}
+              >
+                <div className="flex items-start gap-2">
+                  {/* Icon */}
+                  <svg className={`w-4 h-4 sm:w-5 sm:h-5 ${iconColor} shrink-0 mt-0.5`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {isRateLimit ? (
+                      <>
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </>
+                    ) : isTimeout ? (
+                      <>
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </>
+                    ) : (
+                      <>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                      </>
+                    )}
+                  </svg>
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-pixel text-[5px] sm:text-[6px] ${iconColor} tracking-[1.5px] uppercase mb-0.5`}>
+                      {isRateLimit ? 'RATE LIMIT' : isTimeout ? 'TIMEOUT' : isCircuit ? 'AI UNAVAILABLE' : 'AI ERROR'}
+                    </p>
+                    <p className="font-game text-[10px] sm:text-[11px] text-white/70 leading-tight">
+                      {msg.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Live chat panel — bottom-left */}
       <ChatPanel
         chatLog={chatLog}
         onSend={(msg) => sendChat(gameId, msg)}
       />
+
+      {/* AI Thinking Panel — fixed overlay, right side, watch mode only */}
+      {gameState?.watchOnly && (
+        <ThinkingPanel
+          entries={aiThinkingLog}
+          thinkingId={thinkingId}
+          players={gameState.players}
+        />
+      )}
     </main>
   )
 }
