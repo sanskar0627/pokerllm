@@ -52,9 +52,23 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
   return { allowed: true, remaining: limit - w.count, retryAfterSec: 0 }
 }
 
-/** Best-effort client IP from standard proxy headers (falls back to a constant). */
+/**
+ * Best-effort client IP extraction.
+ *
+ * IMPORTANT: x-forwarded-for and x-real-ip are trivially spoofable unless
+ * a trusted reverse proxy (nginx, Cloudflare, etc.) strips and re-sets them.
+ * When running behind a proxy, set TRUSTED_PROXY=1 so we read the header.
+ * Without the flag, we ignore proxy headers entirely and fall back to a
+ * constant (all API-route requests share one bucket, which is still safe
+ * for low-volume signup/login rate limits).
+ */
 export function clientIpFrom(req: Request): string {
-  const xff = req.headers.get('x-forwarded-for')
-  if (xff) return xff.split(',')[0].trim()
-  return req.headers.get('x-real-ip')?.trim() || 'unknown'
+  if (process.env.TRUSTED_PROXY === '1') {
+    const xff = req.headers.get('x-forwarded-for')
+    if (xff) return xff.split(',')[0].trim()
+    return req.headers.get('x-real-ip')?.trim() || 'unknown'
+  }
+  // No trusted proxy: don't trust any header — use a fixed key.
+  // This means rate limits apply globally, which is fine for auth endpoints.
+  return 'direct'
 }
