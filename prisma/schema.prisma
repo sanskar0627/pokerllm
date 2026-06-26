@@ -16,11 +16,9 @@ model User {
   emailVerified DateTime?
   passwordHash  String?
   image         String?
-  credits       Int       @default(0)
 
   accounts        Account[]
   sessions        Session[]
-  transactions    Transaction[]
   gameRecords     GameRecord[]
   aiPlayerProfiles AiPlayerProfile[]
   aiNotes         AiNote[]
@@ -65,22 +63,6 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// ─── Credits & billing ───────────────────────────────────────────────────────
-
-model Transaction {
-  id      String @id @default(cuid())
-  userId  String
-  amount  Int    // positive = credit added, negative = credit spent
-  type    String // 'purchase' | 'game_debit' | 'refund' | 'signup_bonus'
-  details String? // e.g. "Game abc123 — Claude + ChatGPT x 15 rounds"
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-}
-
 // ─── Game history ────────────────────────────────────────────────────────────
 
 model GameRecord {
@@ -89,7 +71,6 @@ model GameRecord {
   gameId     String   // matches the in-memory socket game ID
   models     String[] // which AI models were used
   rounds     Int      // how many rounds played
-  creditCost Int      // total credits charged
   result     String?  // 'win' | 'loss' | 'abandoned'
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -97,6 +78,7 @@ model GameRecord {
   createdAt DateTime @default(now())
 
   @@index([userId])
+  @@index([gameId])
 }
 
 // ─── AI Memory (per-user, per-model) ────────────────────────────────────────
