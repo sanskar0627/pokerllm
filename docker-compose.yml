@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: pokerllm-app
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-pokerllm_dev_redis_2024}@redis:6379
+      - TRUSTED_PROXY=1
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: pokerllm-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-pokerllm_dev_redis_2024}
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:-pokerllm_dev_redis_2024}', '--no-auth-warning', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  redis-data:
