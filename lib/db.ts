@@ -11,8 +11,12 @@ function createPrismaClient() {
   return new PrismaClient({ adapter } as any)
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient()
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma
-}
+// Lazy getter — Prisma client is only created on first access, not on import
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop, receiver) {
+    if (!globalForPrisma.prisma) {
+      globalForPrisma.prisma = createPrismaClient()
+    }
+    return Reflect.get(globalForPrisma.prisma, prop, receiver)
+  },
+})
