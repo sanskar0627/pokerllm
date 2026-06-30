@@ -42,9 +42,9 @@ yarn-error.log*
 next-env.d.ts
 claude.md
 
-# assets (too large for git)
-/public/images/
-/public/sounds/
+# assets - committed for Railway deployment
+# /public/images/
+# /public/sounds/
 
 # claude config
 .claude/
@@ -56,8 +56,8 @@ test-logic.ts
 next-env.d.ts
 *.tsbuildinfo
 backdate-commits.sh
-/public/music/
-/public/videos/
+# /public/music/
+# /public/videos/
 
 /lib/generated/prisma
 
