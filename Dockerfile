@@ -26,8 +26,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Don't run as root
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser  --system --uid 1001 pokerllm
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd  --system --uid 1001 --gid nodejs pokerllm
 USER pokerllm
 
 # Copy built artifacts
