@@ -13,6 +13,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Ensure public/ exists (may be missing if large media isn't in git)
+RUN mkdir -p public
+
 # Generate Prisma client
 RUN bunx prisma generate
 
