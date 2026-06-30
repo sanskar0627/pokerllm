@@ -1,6 +1,10 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+let _resend: Resend | null = null
+function getResend() {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY)
+  return _resend
+}
 
 const FROM_EMAIL = process.env.EMAIL_FROM || 'PokerLLM <onboarding@resend.dev>'
 
@@ -14,7 +18,7 @@ export async function sendVerificationEmail(email: string, token: string) {
   const year = new Date().getFullYear()
 
   try {
-    await resend.emails.send({
+    await getResend().emails.send({
       from: FROM_EMAIL,
       to: email,
       subject: 'Verify your PokerLLM account ♠',
