@@ -36,6 +36,8 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
 
 export interface SocketSession {
   userId: string
+  /** Display name from the session token (used for spectator chat) */
+  userName?: string
 }
 
 /**
@@ -57,13 +59,16 @@ export async function getSocketSession(
     const token = cookies[name]
     if (!token) continue
     try {
-      const payload = await decode<{ id?: string; sub?: string }>({
+      const payload = await decode<{ id?: string; sub?: string; name?: string; email?: string }>({
         token,
         secret: SECRET,
         salt: name,
       })
       const userId = payload?.id ?? payload?.sub
-      if (userId) return { userId }
+      if (userId) {
+        const userName = payload?.name ?? payload?.email?.split('@')[0]
+        return { userId, userName }
+      }
     } catch {
       // try the next cookie name
     }

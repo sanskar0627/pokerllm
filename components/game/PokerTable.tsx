@@ -64,7 +64,12 @@ function WinToast({ winners, players }: { winners: WinnerInfo[]; players: Client
     <div className={`fixed bottom-20 sm:bottom-6 right-2 sm:right-6 z-40 ${visible ? 'animate-slide-in-right' : 'animate-slide-out-right'}`}>
       <div className="bg-[rgba(26,10,46,0.95)] border-2 border-[#FFD700]/60 rounded-xl px-3 sm:px-5 py-2 sm:py-3.5 shadow-[0_0_24px_rgba(255,215,0,0.3)] flex items-center gap-2 sm:gap-3 max-w-[220px] sm:max-w-xs">
         <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#FFD700]/15 border border-[#FFD700]/40 flex items-center justify-center shrink-0">
-          <span className="text-base sm:text-lg select-none">🏆</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFD700" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+            <path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+            <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+            <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" fill="rgba(255,215,0,0.2)" />
+          </svg>
         </div>
         <div className="flex flex-col gap-0.5">
           <span className="font-pixel text-[7px] sm:text-[8px] text-[#FFD700] tracking-wide">{name.toUpperCase()} WINS</span>
@@ -168,9 +173,11 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, aiReflect
         <ActionLog log={gameState.log} players={gameState.players} />
       </div>
 
-      {/* Top row */}
+      {/* Top row — wider separation when 2 seats so they don't crowd each other */}
       {topPlayers.length > 0 && (
-        <div className={`flex justify-center gap-2 sm:gap-8 ${topPlayers.length > 1 ? 'sm:pr-68' : ''}`}>
+        <div className={`flex justify-center gap-2
+          ${topPlayers.length === 2 ? 'sm:gap-32 lg:gap-48 xl:gap-64' : 'sm:gap-8 lg:gap-16'}
+          ${topPlayers.length > 1 ? 'sm:pr-68' : ''}`}>
           {topPlayers.map(p => seat(p))}
         </div>
       )}

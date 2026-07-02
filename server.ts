@@ -745,7 +745,8 @@ app.prepare().then(async () => {
       if (!session) {
         return next(new Error('unauthorized'))
       }
-      ;(socket.data as { userId?: string }).userId = session.userId
+      ;(socket.data as { userId?: string; userName?: string }).userId = session.userId
+      ;(socket.data as { userId?: string; userName?: string }).userName = session.userName
       next()
     } catch {
       next(new Error('unauthorized'))
@@ -1040,17 +1041,24 @@ app.prepare().then(async () => {
       if (!state) return
 
       const player = state.players.find(pl => pl.id === socketData.playerId)
-      if (!player) return
+
+      // Watch mode: the human isn't seated (playerId is ''), but they can
+      // still chat as a spectator using their session display name.
+      if (!player && !state.watchOnly) return
+      const senderName = player?.name
+        ?? (socket.data as { userName?: string }).userName
+        ?? 'Spectator'
+      const senderId = player?.id ?? `spectator_${gameId}`
 
       const chatMsg = {
-        playerId: player.id,
-        playerName: player.name,
+        playerId: senderId,
+        playerName: senderName,
         message,
         ts: Date.now(),
       }
       io.to(gameId).emit('ai_chat', chatMsg)
-      addChatMessage(gameId, player.name, message)
-      console.log(`[CHAT] 💬 ${player.name}: "${message}"`)
+      addChatMessage(gameId, senderName, message)
+      console.log(`[CHAT] 💬 ${senderName}: "${message}"`)
     })
 
     socket.on('disconnect', () => {
