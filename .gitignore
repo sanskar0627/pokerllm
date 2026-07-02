@@ -63,3 +63,6 @@ backdate-commits.sh
 
 # AI permanent memory (contains game data, generated at runtime)
 /data/
+
+# Original uncompressed images (backup made during asset optimization)
+_image-originals/

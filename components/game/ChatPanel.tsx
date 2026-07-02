@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { memo, useState, useRef, useEffect, useCallback } from 'react'
 import type { ChatLogEntry } from '@/hooks/useSocket'
 
 // ─── Player color map ──────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ interface Props {
   onSend:   (message: string) => void
 }
 
-export function ChatPanel({ chatLog, onSend }: Props) {
+export const ChatPanel = memo(function ChatPanel({ chatLog, onSend }: Props) {
   const [input, setInput] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -205,4 +205,4 @@ export function ChatPanel({ chatLog, onSend }: Props) {
       </div>
     </>
   )
-}
+})

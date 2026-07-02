@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useEffect, useState, useRef } from 'react'
+import { use, useEffect, useState, useRef, useCallback } from 'react'
 import { useSession }               from 'next-auth/react'
 import Link                         from 'next/link'
 import { useSocket }                from '@/hooks/useSocket'
@@ -8,6 +8,7 @@ import { useAudio }                 from '@/hooks/useAudio'
 import { PokerTable }               from '@/components/game/PokerTable'
 import { ChatPanel }                from '@/components/game/ChatPanel'
 import { ThinkingPanel }            from '@/components/game/ThinkingPanel'
+import { AssetPreloader }           from '@/components/game/AssetPreloader'
 import type { PlayerAction, WinnerInfo } from '@/types/poker'
 
 type Props = { params: Promise<{ gameId: string }> }
@@ -75,13 +76,19 @@ export default function GamePage({ params }: Props) {
     socket.emit('player_action', { gameId, playerId, action, amount })
   }
 
+  // Stable reference so the memoized ChatPanel doesn't re-render on every state update
+  const handleSendChat = useCallback((msg: string) => sendChat(gameId, msg), [sendChat, gameId])
+
   if (!gameState) {
     return (
       <main className="relative min-h-screen overflow-hidden">
+        {/* Start warming card/button assets while we connect */}
+        <AssetPreloader />
         {/* Table room background */}
         <img
           src="/images/table-room-bg.png"
           alt=""
+          fetchPriority="high"
           className="absolute inset-0 w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-black/60" />
@@ -90,7 +97,7 @@ export default function GamePage({ params }: Props) {
             <div className="w-14 h-14 border-4 border-[#FFD700] border-t-transparent rounded-full animate-spin mx-auto
                             shadow-[0_0_24px_rgba(255,215,0,0.4)]" />
             <p className="font-pixel text-[9px] text-[#FFD700] tracking-[3px] animate-pulse">
-              {connected ? 'LOADING GAME felt...' : 'CONNECTING TO CASINO...'}
+              {connected ? 'LOADING TABLE...' : 'CONNECTING TO CASINO...'}
             </p>
             {error && (
               <div className="bg-red-500/10 border-2 border-red-500/35 rounded-xl px-5 py-3.5 max-w-sm mx-auto shadow-md">
@@ -105,10 +112,12 @@ export default function GamePage({ params }: Props) {
 
   return (
     <main className="relative min-h-screen overflow-hidden">
+      <AssetPreloader />
       {/* Table room background */}
       <img
         src="/images/table-room-bg.png"
         alt=""
+        fetchPriority="high"
         className="absolute inset-0 w-full h-full object-cover"
       />
       <div className="absolute inset-0 bg-black/35" />
@@ -245,10 +254,7 @@ export default function GamePage({ params }: Props) {
       )}
 
       {/* Live chat panel — bottom-left */}
-      <ChatPanel
-        chatLog={chatLog}
-        onSend={(msg) => sendChat(gameId, msg)}
-      />
+      <ChatPanel chatLog={chatLog} onSend={handleSendChat} />
 
       {/* AI Thinking Panel — fixed overlay, right side, watch mode only */}
       {gameState?.watchOnly && (
