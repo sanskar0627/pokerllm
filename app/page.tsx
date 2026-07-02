@@ -24,15 +24,15 @@ function FallingCards() {
     '/images/cards/K_spades.png',
   ]
 
+  // Fewer cards, no blur filters — blur on animating layers is expensive to composite.
+  // Lower opacity on the "far" cards gives the same depth cue for free.
   const items = [
-    { left: '2%', delay: '0s', duration: '18s', scale: 0.45, card: cards[0], blur: 'blur-[1px]' },
-    { left: '10%', delay: '4s', duration: '22s', scale: 0.35, card: cards[6], blur: 'blur-[2px]' },
-    { left: '88%', delay: '1s', duration: '20s', scale: 0.5, card: cards[1], blur: 'blur-[1px]' },
-    { left: '95%', delay: '6s', duration: '24s', scale: 0.3, card: cards[2], blur: 'blur-[2px]' },
-    { left: '5%', delay: '8s', duration: '19s', scale: 0.4, card: cards[3], blur: 'blur-[1px]' },
-    { left: '92%', delay: '3s', duration: '21s', scale: 0.45, card: cards[4], blur: 'blur-[1px]' },
-    { left: '15%', delay: '10s', duration: '23s', scale: 0.3, card: cards[8], blur: 'blur-[2px]' },
-    { left: '82%', delay: '7s', duration: '17s', scale: 0.4, card: cards[5], blur: 'blur-[2px]' },
+    { left: '2%', delay: '0s', duration: '18s', scale: 0.45, card: cards[0], opacity: 'opacity-20' },
+    { left: '10%', delay: '4s', duration: '22s', scale: 0.35, card: cards[6], opacity: 'opacity-10' },
+    { left: '88%', delay: '1s', duration: '20s', scale: 0.5, card: cards[1], opacity: 'opacity-20' },
+    { left: '5%', delay: '8s', duration: '19s', scale: 0.4, card: cards[3], opacity: 'opacity-15' },
+    { left: '92%', delay: '3s', duration: '21s', scale: 0.45, card: cards[4], opacity: 'opacity-20' },
+    { left: '82%', delay: '7s', duration: '17s', scale: 0.4, card: cards[5], opacity: 'opacity-10' },
   ]
 
   return (
@@ -42,7 +42,9 @@ function FallingCards() {
           key={idx}
           src={item.card}
           alt=""
-          className={`absolute animate-fall ${item.blur} opacity-20`}
+          decoding="async"
+          loading="lazy"
+          className={`absolute animate-fall ${item.opacity} will-change-transform`}
           style={{
             left: item.left,
             animationDelay: item.delay,
@@ -63,7 +65,7 @@ function GoldDust() {
   useEffect(() => { setMounted(true) }, [])
 
   const particles = useMemo(() =>
-    Array.from({ length: 30 }, (_, i) => {
+    Array.from({ length: 14 }, (_, i) => {
       const seed = (i * 7 + 13) % 100
       return {
         left: `${(seed * 37) % 100}%`,
@@ -223,11 +225,13 @@ export default function HomePage() {
         <img
           src="/images/home-bg-mobile.png"
           alt=""
+          fetchPriority="high"
           className="absolute inset-0 w-full h-full object-cover lg:hidden"
         />
         <img
           src="/images/home-bg-desktop.png"
           alt=""
+          fetchPriority="high"
           className="absolute inset-0 w-full h-full object-cover hidden lg:block"
         />
         <div className="absolute inset-0 bg-black/30" />
@@ -508,36 +512,52 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Panel */}
-          <div className="bg-[rgba(81,46,123,0.94)] border-[3px] border-[#FFD700]/30 rounded-2xl p-4 sm:p-8 space-y-6 sm:space-y-8
-                          shadow-[0_0_40px_rgba(0,0,0,0.5),_0_0_24px_rgba(81,46,123,0.4)] animate-fade-up backdrop-blur-md">
-
-            {/* Game mode toggle */}
-            <GameModeToggle watchOnly={watchOnly} onChange={setWatchOnly} />
-
-            {/* Player setup and game configuration presets */}
-            <PlayerSetup
-              startingStack={startingStack}
-              smallBlind={smallBlind}
-              bigBlind={bigBlind}
-              onStackChange={handleStackChange}
+          {/* Panel — shared dark-glass surface (matches auth cards) */}
+          <div className="relative panel-glass rounded-2xl p-4 sm:p-8 animate-fade-up">
+            {/* Gold hairline frame (inset) */}
+            <div
+              className="absolute inset-[5px] rounded-[12px] pointer-events-none"
+              style={{ boxShadow: 'inset 0 0 0 1px rgba(255,215,0,0.10)' }}
             />
 
-            {/* AI selector */}
-            <LLMSelector selected={selectedAIs} onChange={setSelectedAIs} watchOnly={watchOnly} />
+            <div className="relative space-y-6 sm:space-y-8">
+              {/* Game mode toggle */}
+              <GameModeToggle watchOnly={watchOnly} onChange={setWatchOnly} />
 
-            {/* Create button */}
-            <button
-              onClick={handleCreate}
-              disabled={!canStart}
-              className={`w-full py-4.5 rounded-xl font-pixel text-[12px] tracking-[2px] transition-all duration-200 shadow-[0_4px_12px_rgba(0,0,0,0.3)] active:scale-95
-                ${!canStart
-                  ? 'bg-white/10 text-white/30 cursor-not-allowed border border-white/10'
-                  : 'bg-gradient-to-b from-[#FFD700] to-[#B8860B] text-[#1a0a2e] border-2 border-[#FFD700] hover:shadow-[0_0_24px_rgba(255,215,0,0.45)] hover:brightness-105 active:brightness-95'
-                }`}
-            >
-              {creating ? 'CREATING...' : watchOnly ? 'START WATCHING' : 'START GAME'}
-            </button>
+              {/* Player setup and game configuration presets */}
+              <PlayerSetup
+                startingStack={startingStack}
+                smallBlind={smallBlind}
+                bigBlind={bigBlind}
+                onStackChange={handleStackChange}
+              />
+
+              {/* AI selector */}
+              <LLMSelector selected={selectedAIs} onChange={setSelectedAIs} watchOnly={watchOnly} />
+
+              {/* Create button — matches auth primary button */}
+              <button
+                onClick={handleCreate}
+                disabled={!canStart}
+                className={`group relative w-full py-4.5 rounded-xl font-pixel text-[12px] tracking-[2px] transition-all duration-200 active:scale-[0.98] overflow-hidden
+                  ${!canStart
+                    ? 'bg-white/5 text-white/25 cursor-not-allowed border border-white/10'
+                    : 'text-[#1a0a2e] hover:-translate-y-0.5'
+                  }`}
+                style={canStart ? {
+                  background: 'linear-gradient(135deg, #FFE27A 0%, #FFD700 45%, #C49630 100%)',
+                  boxShadow: '0 6px 20px rgba(255,215,0,0.26), inset 0 1px 0 rgba(255,255,255,0.32)',
+                } : undefined}
+              >
+                {canStart && (
+                  <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-out
+                                   bg-gradient-to-r from-transparent via-white/30 to-transparent pointer-events-none" />
+                )}
+                <span className="relative">
+                  {creating ? 'CREATING...' : watchOnly ? 'START WATCHING' : 'START GAME'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

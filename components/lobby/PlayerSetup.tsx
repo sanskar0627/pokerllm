@@ -52,10 +52,10 @@ export function PlayerSetup({
               <button
                 key={preset.label}
                 onClick={() => onStackChange(preset.stack, preset.sb, preset.bb)}
-                className={`relative flex flex-col items-center gap-1.5 px-4 py-3.5 rounded-xl border-2 transition-all duration-200 overflow-hidden
+                className={`relative flex flex-col items-center gap-1.5 px-4 py-3.5 rounded-xl border transition-all duration-200 overflow-hidden active:scale-[0.98]
                   ${isActive
-                    ? 'bg-[#FFD700]/15 border-[#FFD700] text-white shadow-[0_0_16px_rgba(255,215,0,0.25)]'
-                    : 'bg-black/35 border-white/10 text-white/40 hover:border-[#FFD700]/30 hover:text-white/60'
+                    ? 'bg-[#FFD700]/10 border-[#FFD700]/70 text-white shadow-[0_0_20px_rgba(255,215,0,0.18),inset_0_1px_0_rgba(255,255,255,0.06)]'
+                    : 'panel-inset text-white/40 hover:border-[#FFD700]/35 hover:text-white/60 hover:-translate-y-px'
                   }`}
               >
                 {/* Shimmer on active */}

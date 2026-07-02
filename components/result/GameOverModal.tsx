@@ -184,15 +184,27 @@ export function GameOverModal({ players, playerId, aiReflections }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/85 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 backdrop-blur-md overflow-y-auto">
-      <div className="bg-[rgba(26,10,46,0.96)] border-t-[3px] sm:border-[3px] border-[#FFD700] rounded-t-2xl sm:rounded-2xl overflow-hidden max-w-lg w-full sm:my-4 max-h-[90dvh] sm:max-h-[90vh] overflow-y-auto
-                      shadow-[0_0_48px_rgba(255,215,0,0.4)] animate-fade-up">
+      <div className="panel-glass border-t sm:border border-[#FFD700]/30 rounded-t-2xl sm:rounded-2xl overflow-hidden max-w-lg w-full sm:my-4 max-h-[90dvh] sm:max-h-[90vh] overflow-y-auto
+                      shadow-[0_0_48px_rgba(255,215,0,0.25)] animate-fade-up">
         {/* Decorative gold line */}
-        <div className="w-full h-1 bg-[#FFD700]" />
+        <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-[#FFD700] to-transparent" />
 
         <div className="p-6 sm:p-8 flex flex-col items-center text-center space-y-5">
           {/* Trophy Icon */}
-          <div className="relative w-20 h-20 flex items-center justify-center bg-[#FFD700]/10 rounded-full border border-[#FFD700]/30 shadow-inner">
-            <span className="text-[40px] animate-float select-none">🏆</span>
+          <div className="relative w-20 h-20 flex items-center justify-center bg-[#FFD700]/10 rounded-full border border-[#FFD700]/30 shadow-inner animate-float">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="url(#trophyGradOver)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+              className="drop-shadow-[0_0_16px_rgba(255,215,0,0.45)]">
+              <defs>
+                <linearGradient id="trophyGradOver" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#FFE27A" />
+                  <stop offset="1" stopColor="#B8860B" />
+                </linearGradient>
+              </defs>
+              <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+              <path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+              <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+              <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" fill="rgba(255,215,0,0.15)" />
+            </svg>
           </div>
 
           {/* Heading */}

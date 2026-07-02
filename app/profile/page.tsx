@@ -164,13 +164,13 @@ const MODEL_DISPLAY: Record<string, string> = {
 
 function StatCard({ label, value, sub, icon }: { label: string; value: string | number; sub?: string; icon: React.ReactNode }) {
   return (
-    <div className="bg-black/30 border border-white/10 rounded-xl p-3 sm:p-4 flex flex-col gap-1.5">
+    <div className="panel-inset rounded-xl p-3 sm:p-4 flex flex-col gap-1.5 transition-all duration-200 hover:border-[#FFD700]/25 hover:-translate-y-0.5">
       <div className="flex items-center gap-1.5 sm:gap-2">
         {icon}
-        <span className="font-pixel text-[5px] sm:text-[7px] text-white/40 tracking-[1.5px] uppercase">{label}</span>
+        <span className="font-game text-[10px] sm:text-[11px] font-semibold text-white/40 tracking-[1.5px] uppercase">{label}</span>
       </div>
-      <span className="font-pixel text-[13px] sm:text-[18px] text-[#FFD700] tabular-nums leading-none">{value}</span>
-      {sub && <span className="font-game text-[9px] sm:text-[11px] text-white/35">{sub}</span>}
+      <span className="font-pixel text-[13px] sm:text-[18px] text-[#FFD700] tabular-nums leading-none drop-shadow-[0_0_12px_rgba(255,215,0,0.25)]">{value}</span>
+      {sub && <span className="font-game text-[10px] sm:text-[12px] text-white/35">{sub}</span>}
     </div>
   )
 }
@@ -183,10 +183,10 @@ function TabButton({ active, label, onClick }: { active: boolean; label: string;
   return (
     <button
       onClick={onClick}
-      className={`font-pixel text-[6px] sm:text-[8px] tracking-[1.5px] px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-lg transition-all duration-200 touch-manipulation whitespace-nowrap
+      className={`font-pixel text-[7px] sm:text-[9px] tracking-[1.5px] px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition-all duration-200 touch-manipulation whitespace-nowrap active:scale-95
         ${active
-          ? 'bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/40 shadow-[0_0_12px_rgba(255,215,0,0.15)]'
-          : 'text-white/40 hover:text-white/60 border border-transparent hover:border-white/10'
+          ? 'bg-[#FFD700]/12 text-[#FFD700] border border-[#FFD700]/40 shadow-[0_0_16px_rgba(255,215,0,0.15),inset_0_1px_0_rgba(255,255,255,0.06)]'
+          : 'text-white/40 hover:text-white/65 border border-white/[0.06] hover:border-white/15 bg-white/[0.02]'
         }`}
     >
       {label}
@@ -343,7 +343,7 @@ export default function ProfilePage() {
           </div>
 
           {/* ── User Identity Card ──────────────────────────────────────── */}
-          <div className="bg-[rgba(26,10,46,0.92)] border border-[#FFD700]/20 rounded-xl p-3 sm:p-6 mb-3 sm:mb-6 shadow-[0_0_30px_rgba(0,0,0,0.4)] animate-fade-up">
+          <div className="panel-glass rounded-xl p-3 sm:p-6 mb-3 sm:mb-6 animate-fade-up">
             <div className="flex items-center gap-3 sm:gap-4">
               {/* Avatar */}
               <div className="w-11 h-11 sm:w-16 sm:h-16 rounded-full bg-[#FFD700]/10 border-2 border-[#FFD700]/30 flex items-center justify-center shrink-0 shadow-[0_0_16px_rgba(255,215,0,0.15)] overflow-hidden">
@@ -406,8 +406,8 @@ export default function ProfilePage() {
 
               {/* AI Opponents Breakdown */}
               {Object.keys(stats.aiModelCounts).length > 0 && (
-                <div className="bg-black/30 border border-white/10 rounded-xl p-3 sm:p-5">
-                  <h3 className="font-pixel text-[6px] sm:text-[8px] text-[#FFD700]/70 tracking-[2px] uppercase mb-2.5 sm:mb-3">Games per AI</h3>
+                <div className="panel-glass rounded-xl p-3 sm:p-5">
+                  <h3 className="font-pixel text-[8px] sm:text-[9px] text-[#FFD700]/70 tracking-[2px] uppercase mb-2.5 sm:mb-3">Games per AI</h3>
                   <div className="space-y-2">
                     {Object.entries(stats.aiModelCounts)
                       .sort((a, b) => b[1] - a[1])
@@ -435,10 +435,10 @@ export default function ProfilePage() {
 
               {/* AI Knowledge of You */}
               {aiProfiles.length > 0 && (
-                <div className="bg-black/30 border border-white/10 rounded-xl p-3 sm:p-5">
+                <div className="panel-glass rounded-xl p-3 sm:p-5">
                   <div className="flex items-center gap-1.5 mb-2.5 sm:mb-3">
                     <IconEye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#00FFFF]/60" />
-                    <h3 className="font-pixel text-[6px] sm:text-[8px] text-[#00FFFF]/70 tracking-[2px] uppercase">How AIs See You</h3>
+                    <h3 className="font-pixel text-[8px] sm:text-[9px] text-[#00FFFF]/70 tracking-[2px] uppercase">How AIs See You</h3>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                     {aiProfiles.map(profile => {
@@ -468,7 +468,7 @@ export default function ProfilePage() {
 
               {/* Empty state */}
               {stats.totalGames === 0 && (
-                <div className="bg-black/30 border border-white/10 rounded-xl p-6 sm:p-12 text-center">
+                <div className="panel-glass rounded-xl p-6 sm:p-12 text-center">
                   <IconCards className="w-10 h-10 sm:w-12 sm:h-12 text-[#FFD700]/30 mx-auto mb-3 sm:mb-4" />
                   <p className="font-pixel text-[7px] sm:text-[10px] text-white/50 tracking-[2px] mb-1.5 sm:mb-2">NO GAMES YET</p>
                   <p className="font-game text-[11px] sm:text-[12px] text-white/30 mb-4 sm:mb-5">Play your first game to start tracking stats</p>
@@ -487,13 +487,13 @@ export default function ProfilePage() {
           {tab === 'history' && (
             <div className="space-y-1.5 sm:space-y-3 animate-fade-up">
               {gameRecords.length === 0 ? (
-                <div className="bg-black/30 border border-white/10 rounded-xl p-6 sm:p-8 text-center">
+                <div className="panel-glass rounded-xl p-6 sm:p-8 text-center">
                   <IconCards className="w-8 h-8 text-white/20 mx-auto mb-3" />
                   <p className="font-pixel text-[7px] sm:text-[8px] text-white/50 tracking-[2px]">NO GAMES PLAYED YET</p>
                 </div>
               ) : (
                 gameRecords.map(game => (
-                  <div key={game.id} className="bg-black/30 border border-white/10 rounded-xl px-2.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-1.5 sm:gap-2">
+                  <div key={game.id} className="panel-inset rounded-xl px-2.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-1.5 sm:gap-2 transition-all duration-200 hover:border-[#FFD700]/20">
                     {/* Left: result + models */}
                     <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
                       <ResultBadge result={game.result} />
@@ -529,19 +529,19 @@ export default function ProfilePage() {
                   <div className="w-10 h-10 border-[3px] border-[#FFD700] border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : leaderboard.length === 0 ? (
-                <div className="bg-black/30 border border-white/10 rounded-xl p-6 sm:p-8 text-center">
+                <div className="panel-glass rounded-xl p-6 sm:p-8 text-center">
                   <IconTrophy className="w-8 h-8 text-white/20 mx-auto mb-3" />
                   <p className="font-pixel text-[7px] sm:text-[8px] text-white/50 tracking-[2px]">NO PLAYERS YET</p>
                 </div>
               ) : (
-                <div className="bg-black/30 border border-white/10 rounded-xl overflow-hidden">
+                <div className="panel-glass rounded-xl overflow-hidden">
                   {/* Header row */}
                   <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] sm:grid-cols-[2.5rem_1fr_4rem_4rem_5rem] gap-0.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 border-b border-white/10">
-                    <span className="font-pixel text-[4px] sm:text-[6px] text-white/30 tracking-wider">#</span>
-                    <span className="font-pixel text-[4px] sm:text-[6px] text-white/30 tracking-wider">PLAYER</span>
-                    <span className="font-pixel text-[4px] sm:text-[6px] text-white/30 tracking-wider text-right">WINS</span>
-                    <span className="font-pixel text-[4px] sm:text-[6px] text-white/30 tracking-wider text-right">RATE</span>
-                    <span className="font-pixel text-[4px] sm:text-[6px] text-white/30 tracking-wider text-right">GAMES</span>
+                    <span className="font-pixel text-[6px] sm:text-[7px] text-white/30 tracking-wider">#</span>
+                    <span className="font-pixel text-[6px] sm:text-[7px] text-white/30 tracking-wider">PLAYER</span>
+                    <span className="font-pixel text-[6px] sm:text-[7px] text-white/30 tracking-wider text-right">WINS</span>
+                    <span className="font-pixel text-[6px] sm:text-[7px] text-white/30 tracking-wider text-right">RATE</span>
+                    <span className="font-pixel text-[6px] sm:text-[7px] text-white/30 tracking-wider text-right">GAMES</span>
                   </div>
                   {/* Rows */}
                   {leaderboard.map((entry, idx) => {
@@ -549,7 +549,7 @@ export default function ProfilePage() {
                     return (
                       <div
                         key={entry.userId}
-                        className={`grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] sm:grid-cols-[2.5rem_1fr_4rem_4rem_5rem] gap-0.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-3 border-b border-white/5 last:border-b-0 transition-colors
+                        className={`grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] sm:grid-cols-[2.5rem_1fr_4rem_4rem_5rem] gap-0.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-3 border-b border-white/5 last:border-b-0 transition-colors hover:bg-white/[0.03]
                           ${isYou ? 'bg-[#FFD700]/5' : ''}`}
                       >
                         {/* Rank */}

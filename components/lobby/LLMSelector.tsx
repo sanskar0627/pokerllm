@@ -85,20 +85,20 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
             <button
               key={m.id}
               onClick={() => toggle(m.id)}
-              className={`relative flex items-center gap-4 px-4 py-3.5 rounded-xl border-2 text-left transition-all duration-200 overflow-hidden
+              className={`relative flex items-center gap-4 px-4 py-3.5 rounded-xl border text-left transition-all duration-200 overflow-hidden active:scale-[0.99]
                 ${active
-                  ? 'bg-[#FFD700]/15 border-[#FFD700] shadow-[0_0_16px_rgba(255,215,0,0.25)]'
-                  : 'bg-black/35 border-white/10 hover:border-[#FFD700]/40'
+                  ? 'bg-[#FFD700]/10 border-[#FFD700]/70 shadow-[0_0_20px_rgba(255,215,0,0.18),inset_0_1px_0_rgba(255,255,255,0.06)]'
+                  : 'panel-inset hover:border-[#FFD700]/35 hover:bg-white/[0.03] hover:-translate-y-px'
                 }`}
             >
               {/* Gold accent bar */}
               <div className={`absolute left-0 top-0 bottom-0 w-1 bg-[#FFD700] transition-opacity ${active ? 'opacity-100' : 'opacity-0'}`} />
 
               {/* Avatar — custom inline SVGs */}
-              <div className={`w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden transition-all border-2
+              <div className={`w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden transition-all duration-200 border
                 ${active
-                  ? 'bg-black/40 border-[#FFD700] shadow-[0_0_12px_rgba(255,215,0,0.3)]'
-                  : 'bg-black/20 border-white/10'}`}
+                  ? 'bg-black/40 border-[#FFD700]/70 shadow-[0_0_12px_rgba(255,215,0,0.25)] text-[#FFD700]'
+                  : 'bg-black/25 border-white/10 text-white/50'}`}
               >
                 <ModelLogo id={m.id} />
               </div>

@@ -123,7 +123,7 @@ export default function LoginPage() {
   return (
     <main className="relative w-full min-h-screen overflow-hidden bg-[#0a0618]">
       {/* Background */}
-      <img src="/images/loginpageview.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
+      <img src="/images/loginpageview.png" alt="" fetchPriority="high" className="absolute inset-0 w-full h-full object-cover" />
 
       {/* Cinematic grade — deepen edges, settle the gold frame on the right */}
       <div

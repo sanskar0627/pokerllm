@@ -3,11 +3,16 @@
 /* ─── Theme variables ─────────────────────────────────────────────────── */
 :root {
   --gold:        #FFD700;
+  --gold-bright: #FFE27A;
+  --gold-deep:   #B8860B;
   --gold-dim:    rgba(255, 215, 0, 0.4);
   --purple-deep: #1a0a2e;
   --purple-mid:  #2d1252;
   --purple-panel: rgba(81, 46, 123, 0.92);
   --cyan:        #00FFFF;
+  /* Shared dark-glass surface (matches auth cards) */
+  --glass-top:    rgba(24, 17, 46, 0.93);
+  --glass-bottom: rgba(14, 10, 30, 0.96);
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────── */
@@ -30,6 +35,70 @@ body {
 /* Touch optimization: remove 300ms tap delay */
 a, button, input, select, textarea {
   touch-action: manipulation;
+}
+
+/* ─── Consistent focus & selection ────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgba(255, 215, 0, 0.55);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+input:focus-visible, textarea:focus-visible {
+  outline: none; /* inputs have their own focus styling */
+}
+
+::selection {
+  background: rgba(255, 215, 0, 0.25);
+  color: #fff;
+}
+
+/* Remove number input spinners (raise amount etc.) */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ─── Shared surfaces ─────────────────────────────────────────────────── */
+/* Dark-glass panel — the one card style used across lobby, profile, modals */
+.panel-glass {
+  background: linear-gradient(180deg, var(--glass-top) 0%, var(--glass-bottom) 100%);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 215, 0, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* Inner sub-card used inside panels (stats, rows, list items) */
+.panel-inset {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 215, 0, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* Hide scrollbars but keep scrollability (used by tab rows etc.) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Reduced motion ──────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ─── Utility font classes ────────────────────────────────────────────── */

@@ -20,7 +20,8 @@ const scaleFade = {
   show: { scale: 1, transition: { duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] as const } },
 }
 
-const TEAL = '#5EC4C4'
+/* Brand accent — gold, consistent with login/home/lobby */
+const GOLD = '#FFD700'
 
 /* ── Small inline icons ─────────────────────────────────────────────────── */
 function UserIcon({ c = 'currentColor' }: { c?: string }) {
@@ -115,18 +116,18 @@ export default function SignupPage() {
   /* Shared input shell styles */
   const fieldShadow = (active: boolean) =>
     active
-      ? '0 0 0 1.5px rgba(94,196,196,0.45), 0 0 22px rgba(94,196,196,0.12), inset 0 1px 2px rgba(0,0,0,0.25)'
+      ? '0 0 0 1.5px rgba(255,215,0,0.40), 0 0 22px rgba(255,215,0,0.12), inset 0 1px 2px rgba(0,0,0,0.25)'
       : 'inset 0 1px 2px rgba(0,0,0,0.25)'
-  const fieldBg = 'linear-gradient(135deg, rgba(255,255,255,0.045) 0%, rgba(94,196,196,0.025) 100%)'
+  const fieldBg = 'linear-gradient(135deg, rgba(255,255,255,0.045) 0%, rgba(255,215,0,0.02) 100%)'
   const inputCls =
     'w-full rounded-xl pl-11 pr-4 py-3.5 font-game text-[13.5px] text-white/90 font-medium ' +
     'placeholder:text-white/20 placeholder:font-normal bg-transparent border border-white/[0.07] ' +
-    'focus:outline-none focus:border-[#5EC4C4]/40 transition-colors duration-200'
+    'focus:outline-none focus:border-[#FFD700]/35 transition-colors duration-200'
 
   return (
     <main className="relative w-full min-h-screen overflow-hidden bg-[#071417]">
       {/* Background */}
-      <img src="/images/signuppage.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
+      <img src="/images/signuppage.png" alt="" fetchPriority="high" className="absolute inset-0 w-full h-full object-cover" />
 
       {/* Cinematic grade — deepen edges, lift the marble-right where the form lives */}
       <div
@@ -245,13 +246,13 @@ export default function SignupPage() {
                 className="w-[58px] h-[58px] rounded-full flex items-center justify-center"
                 style={{
                   background: 'radial-gradient(circle at 50% 30%, #143036 0%, #0a1c22 70%, #07161a 100%)',
-                  boxShadow: '0 0 26px rgba(94,196,196,0.16), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)',
+                  boxShadow: '0 0 26px rgba(255,215,0,0.16), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)',
                 }}
                 animate={{
                   boxShadow: [
-                    '0 0 22px rgba(94,196,196,0.12), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.20), inset 0 1px 0 rgba(255,255,255,0.08)',
-                    '0 0 32px rgba(94,196,196,0.26), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)',
-                    '0 0 22px rgba(94,196,196,0.12), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.20), inset 0 1px 0 rgba(255,255,255,0.08)',
+                    '0 0 22px rgba(255,215,0,0.12), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.20), inset 0 1px 0 rgba(255,255,255,0.08)',
+                    '0 0 32px rgba(255,215,0,0.26), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)',
+                    '0 0 22px rgba(255,215,0,0.12), 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,215,0,0.20), inset 0 1px 0 rgba(255,255,255,0.08)',
                   ],
                 }}
                 transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
@@ -276,7 +277,7 @@ export default function SignupPage() {
               className="relative rounded-[22px]"
               style={{
                 background: 'linear-gradient(180deg, rgba(13,31,37,0.93) 0%, rgba(8,21,27,0.96) 100%)',
-                boxShadow: '0 40px 90px rgba(0,0,0,0.6), 0 0 0 1px rgba(94,196,196,0.12), inset 0 1px 0 rgba(255,255,255,0.05)',
+                boxShadow: '0 40px 90px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,215,0,0.12), inset 0 1px 0 rgba(255,255,255,0.05)',
                 backdropFilter: 'blur(44px)',
                 WebkitBackdropFilter: 'blur(44px)',
               }}
@@ -291,7 +292,7 @@ export default function SignupPage() {
               <div className="absolute top-0 left-6 right-6 h-px overflow-hidden rounded-full">
                 <motion.div
                   className="h-full w-[55%]"
-                  style={{ background: 'linear-gradient(90deg, transparent, rgba(255,215,0,0.5), rgba(94,196,196,0.5), transparent)' }}
+                  style={{ background: 'linear-gradient(90deg, transparent, rgba(255,215,0,0.55), transparent)' }}
                   animate={{ x: ['-60%', '200%'] }}
                   transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', repeatDelay: 2.5 }}
                 />
@@ -330,7 +331,7 @@ export default function SignupPage() {
                       transition={{ duration: 0.25 }}
                       className="relative rounded-xl"
                     >
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 z-10 transition-colors duration-200" style={{ color: focused === 'name' ? TEAL : 'rgba(255,255,255,0.3)' }}>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 z-10 transition-colors duration-200" style={{ color: focused === 'name' ? GOLD : 'rgba(255,255,255,0.3)' }}>
                         <UserIcon />
                       </span>
                       <input
@@ -356,7 +357,7 @@ export default function SignupPage() {
                       transition={{ duration: 0.25 }}
                       className="relative rounded-xl"
                     >
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 z-10 transition-colors duration-200" style={{ color: focused === 'email' ? TEAL : 'rgba(255,255,255,0.3)' }}>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 z-10 transition-colors duration-200" style={{ color: focused === 'email' ? GOLD : 'rgba(255,255,255,0.3)' }}>
                         <MailIcon />
                       </span>
                       <input
@@ -381,7 +382,7 @@ export default function SignupPage() {
                       transition={{ duration: 0.25 }}
                       className="relative rounded-xl"
                     >
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 z-10 transition-colors duration-200" style={{ color: focused === 'password' ? TEAL : 'rgba(255,255,255,0.3)' }}>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 z-10 transition-colors duration-200" style={{ color: focused === 'password' ? GOLD : 'rgba(255,255,255,0.3)' }}>
                         <LockIcon />
                       </span>
                       <input
@@ -433,14 +434,14 @@ export default function SignupPage() {
                     <motion.button
                       type="submit"
                       disabled={loading}
-                      whileHover={!loading ? { y: -2, boxShadow: '0 10px 34px rgba(94,196,196,0.34), 0 0 50px rgba(94,196,196,0.12), inset 0 1px 0 rgba(255,255,255,0.22)' } : {}}
+                      whileHover={!loading ? { y: -2, boxShadow: '0 10px 34px rgba(255,215,0,0.36), 0 0 50px rgba(255,215,0,0.12), inset 0 1px 0 rgba(255,255,255,0.22)' } : {}}
                       whileTap={!loading ? { scale: 0.978 } : {}}
                       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                       className={`group relative w-full py-[15px] rounded-xl font-game text-[14px] font-bold tracking-wide overflow-hidden
-                        ${loading ? 'bg-white/5 text-white/25 cursor-not-allowed' : 'text-[#07161a]'}`}
+                        ${loading ? 'bg-white/5 text-white/25 cursor-not-allowed' : 'text-[#1a0a2e]'}`}
                       style={!loading ? {
-                        background: 'linear-gradient(135deg, #7BD6D2 0%, #5EC4C4 45%, #3D9690 100%)',
-                        boxShadow: '0 6px 20px rgba(94,196,196,0.26), inset 0 1px 0 rgba(255,255,255,0.28)',
+                        background: 'linear-gradient(135deg, #FFE27A 0%, #FFD700 45%, #C49630 100%)',
+                        boxShadow: '0 6px 20px rgba(255,215,0,0.26), inset 0 1px 0 rgba(255,255,255,0.32)',
                       } : undefined}
                     >
                       {!loading && (
@@ -453,7 +454,7 @@ export default function SignupPage() {
                         />
                       )}
                       <span className="relative flex items-center justify-center gap-2">
-                        {loading && <div className="w-4 h-4 border-2 border-[#07161a]/25 border-t-[#07161a]/70 rounded-full animate-spin" />}
+                        {loading && <div className="w-4 h-4 border-2 border-[#1a0a2e]/25 border-t-[#1a0a2e]/70 rounded-full animate-spin" />}
                         {loading ? 'Creating account...' : 'Create account'}
                         {!loading && (
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform duration-200 group-hover:translate-x-0.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -505,7 +506,7 @@ export default function SignupPage() {
                 {/* Login link */}
                 <motion.p initial={{ y: 8 }} animate={{ y: 0 }} transition={{ duration: 0.5, delay: 0.9 }} className="text-center mt-6 font-game text-[12px] text-white/35 font-medium">
                   Already have an account?{' '}
-                  <a href="/login" className="text-[#5EC4C4] hover:text-[#7DD8D8] transition-colors duration-200 font-semibold cursor-pointer relative z-50">
+                  <a href="/login" className="text-[#FFD700] hover:text-[#FFE27A] transition-colors duration-200 font-semibold cursor-pointer relative z-50">
                     Log in
                   </a>
                 </motion.p>

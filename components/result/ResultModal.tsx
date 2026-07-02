@@ -139,7 +139,19 @@ export function ResultModal({ winners, players, onClose }: Props) {
                   background: 'radial-gradient(circle, rgba(255,215,0,0.15) 0%, transparent 70%)',
                 }}
               >
-                <span className="text-[36px] select-none drop-shadow-[0_0_20px_rgba(255,215,0,0.5)]">🏆</span>
+                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="url(#trophyGrad)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                  className="drop-shadow-[0_0_20px_rgba(255,215,0,0.5)]">
+                  <defs>
+                    <linearGradient id="trophyGrad" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#FFE27A" />
+                      <stop offset="1" stopColor="#B8860B" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                  <path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                  <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                  <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" fill="rgba(255,215,0,0.15)" />
+                </svg>
               </div>
             </div>
 
