@@ -8,14 +8,11 @@ if (existsSync(".env.local")) {
   config({ path: ".env.local" })
 }
 
-const databaseUrl = process.env["DATABASE_URL"]
-if (!databaseUrl) {
-  throw new Error(
-    "DATABASE_URL is not set. " +
-    "Local: add it to .env.local. " +
-    "Railway: add it in the Variables tab."
-  )
-}
+// During Docker build (prisma generate), DATABASE_URL isn't set — that's fine,
+// generate only creates TypeScript types and doesn't connect to the DB.
+// At runtime (prisma migrate deploy), the real URL from Railway env vars is used.
+const databaseUrl =
+  process.env["DATABASE_URL"] || "postgresql://placeholder:placeholder@localhost:5432/placeholder"
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -26,3 +23,4 @@ export default defineConfig({
     url: databaseUrl,
   },
 })
+
