@@ -47,4 +47,5 @@ COPY --from=builder --chown=pokerllm:nodejs /app/types ./types
 
 EXPOSE 3000
 
-CMD ["bun", "server.ts"]
+# Apply pending DB migrations, then start the custom server.
+CMD ["sh", "-c", "bunx prisma migrate deploy && bun server.ts"]

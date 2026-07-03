@@ -1097,8 +1097,9 @@ app.prepare().then(async () => {
     })
   })
 
-  httpServer.listen(3000, () => {
-    console.log('PokerLLM running on http://localhost:3000')
+  const port = Number(process.env.PORT) || 3000
+  httpServer.listen(port, () => {
+    console.log(`PokerLLM running on http://localhost:${port}`)
   })
 
   // ─── Graceful shutdown ─────────────────────────────────────────────────────

@@ -1,12 +1,21 @@
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 
-let _resend: Resend | null = null
-function getResend() {
-  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY)
-  return _resend
+let _transporter: nodemailer.Transporter | null = null
+
+function getTransporter() {
+  if (!_transporter) {
+    _transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,       // sanskar0627@gmail.com
+        pass: process.env.GMAIL_APP_PASSWORD // 16-char App Password from Google
+      }
+    })
+  }
+  return _transporter
 }
 
-const FROM_EMAIL = process.env.EMAIL_FROM || 'PokerLLM <onboarding@resend.dev>'
+const FROM_EMAIL = process.env.EMAIL_FROM || `PokerLLM <${process.env.GMAIL_USER || 'noreply@pokerllm.com'}>`
 
 /**
  * Send a verification email with a magic link.
@@ -18,7 +27,7 @@ export async function sendVerificationEmail(email: string, token: string) {
   const year = new Date().getFullYear()
 
   try {
-    await getResend().emails.send({
+    await getTransporter().sendMail({
       from: FROM_EMAIL,
       to: email,
       subject: 'Verify your PokerLLM account ♠',
@@ -95,7 +104,7 @@ export async function sendVerificationEmail(email: string, token: string) {
         <tr>
           <td style="padding:6px 14px;border-radius:6px;background-color:#2d1656;border:1px solid #3d2066;">
             <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#a78bfa;">
-              Expires in</span><span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#FFD700;font-weight:600;">15 minutes
+              Expires in</span><span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#FFD700;font-weight:600;"> 15 minutes
             </span>
           </td>
         </tr>
