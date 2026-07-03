@@ -44,12 +44,15 @@ COPY --from=builder --chown=pokerllm:nodejs /app/public ./public
 COPY --from=builder --chown=pokerllm:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=pokerllm:nodejs /app/lib ./lib
 COPY --from=builder --chown=pokerllm:nodejs /app/types ./types
+COPY --from=builder --chown=pokerllm:nodejs /app/prisma.config.ts ./
 
 EXPOSE 3000
 
 # Boot: verify critical env vars are visible, apply DB migrations, start server.
 CMD ["sh", "-c", "\
-  for v in DATABASE_URL AUTH_SECRET ALLOWED_ORIGIN NEXTAUTH_URL; do \
-    if [ -z \"$(printenv $v)\" ]; then echo \"❌ MISSING ENV VAR: $v — set it on this service in Railway → Variables\"; fi; \
-  done && \
+  MISSING=0; \
+  for v in DATABASE_URL AUTH_SECRET NEXTAUTH_URL; do \
+    if [ -z \"$(printenv $v)\" ]; then echo \"❌ MISSING ENV VAR: $v — set it in Railway → Variables\"; MISSING=1; fi; \
+  done; \
+  if [ \"$MISSING\" = \"1\" ]; then echo '🛑 Aborting: fix missing env vars above.'; exit 1; fi && \
   bunx prisma migrate deploy && bun server.ts"]
