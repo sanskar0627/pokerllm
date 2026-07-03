@@ -1,5 +1,15 @@
 import nodemailer from 'nodemailer'
 
+/**
+ * Email delivery — two transports, picked automatically:
+ *
+ * 1. BREVO_API_KEY set  -> Brevo HTTPS API (api.brevo.com, port 443).
+ *    REQUIRED on Railway: trial/hobby plans block outbound SMTP entirely
+ *    (connection timeout on 465/587). HTTPS is never blocked.
+ * 2. Otherwise          -> Gmail SMTP via nodemailer (works locally / on
+ *    hosts that allow SMTP). Needs GMAIL_USER + GMAIL_APP_PASSWORD.
+ */
+
 let _transporter: nodemailer.Transporter | null = null
 
 function getTransporter() {
@@ -7,15 +17,39 @@ function getTransporter() {
     _transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.GMAIL_USER,       // sanskar0627@gmail.com
-        pass: process.env.GMAIL_APP_PASSWORD // 16-char App Password from Google
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
       }
     })
   }
   return _transporter
 }
 
-const FROM_EMAIL = process.env.EMAIL_FROM || `PokerLLM <${process.env.GMAIL_USER || 'noreply@pokerllm.com'}>`
+const SENDER_NAME  = 'PokerLLM'
+const SENDER_EMAIL = process.env.EMAIL_SENDER || process.env.GMAIL_USER || 'noreply@pokerllm.com'
+const FROM_EMAIL   = process.env.EMAIL_FROM || `${SENDER_NAME} <${SENDER_EMAIL}>`
+
+/** Send via Brevo's transactional HTTPS API (no SMTP ports needed). */
+async function sendViaBrevo(to: string, subject: string, html: string): Promise<void> {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY!,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Brevo API ${res.status}: ${body.slice(0, 300)}`)
+  }
+}
 
 /**
  * Send a verification email with a magic link.
@@ -26,12 +60,8 @@ export async function sendVerificationEmail(email: string, token: string) {
   const verifyUrl = `${baseUrl}/verify?token=${encodeURIComponent(token)}`
   const year = new Date().getFullYear()
 
-  try {
-    await getTransporter().sendMail({
-      from: FROM_EMAIL,
-      to: email,
-      subject: 'Verify your PokerLLM account ♠',
-      html: `
+  const subject = 'Verify your PokerLLM account ♠'
+  const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -153,9 +183,14 @@ export async function sendVerificationEmail(email: string, token: string) {
 
 </body>
 </html>
-      `,
-    })
+      `
 
+  try {
+    if (process.env.BREVO_API_KEY) {
+      await sendViaBrevo(email, subject, html)
+    } else {
+      await getTransporter().sendMail({ from: FROM_EMAIL, to: email, subject, html })
+    }
     return { success: true }
   } catch (error) {
     console.error('Failed to send verification email:', error)
