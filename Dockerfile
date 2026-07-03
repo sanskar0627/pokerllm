@@ -47,5 +47,9 @@ COPY --from=builder --chown=pokerllm:nodejs /app/types ./types
 
 EXPOSE 3000
 
-# Apply pending DB migrations, then start the custom server.
-CMD ["sh", "-c", "bunx prisma migrate deploy && bun server.ts"]
+# Boot: verify critical env vars are visible, apply DB migrations, start server.
+CMD ["sh", "-c", "\
+  for v in DATABASE_URL AUTH_SECRET ALLOWED_ORIGIN NEXTAUTH_URL; do \
+    if [ -z \"$(printenv $v)\" ]; then echo \"❌ MISSING ENV VAR: $v — set it on this service in Railway → Variables\"; fi; \
+  done && \
+  bunx prisma migrate deploy && bun server.ts"]
