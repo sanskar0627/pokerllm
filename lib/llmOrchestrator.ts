@@ -16,6 +16,12 @@ async function getGoogleAI() {
   return _GoogleGenerativeAI
 }
 
+// ─── BYOK credential resolution ─────────────────────────────────────────────
+// Users can connect their own provider keys in Settings → AI Providers.
+// resolveProviderRuntime returns { apiKey, model, baseUrl } for the game's
+// owner, or null → we fall back to the server's env keys and default models.
+import { resolveProviderRuntime } from '@/lib/aiProviders/service'
+
 // ─── Cached LLM client instances (reused across calls) ──────────────────────
 // Keyed by hashed API key so credentials never appear as Map keys (heap-safe).
 import { createHash } from 'crypto'
@@ -1181,36 +1187,12 @@ type AskFn = (state: GameState, playerId: string) => Promise<ParsedDecision>
 
 // ─── Connection check — call at game start ───────────────────────────────────
 
-const KEY_MAP: Record<AIModel, string> = {
-  claude:   'ANTHROPIC_API_KEY',
-  chatgpt:  'OPENAI_API_KEY',
-  gemini:   'GOOGLE_API_KEY',
-  grok:     'XAI_API_KEY',
-  deepseek: 'DEEPSEEK_API_KEY',
-  groq:     'GROQ_API_KEY',
-}
 
-const MODEL_NAME: Record<AIModel, string> = {
-  claude:   'claude-haiku-4-5-20251001',
-  chatgpt:  'gpt-4o-mini',
-  gemini:   'gemini-2.5-flash',
-  grok:     'grok-beta',
-  deepseek: 'deepseek-chat',
-  groq:     'llama-3.3-70b-versatile',
-}
 
 export function logAIConnectionStatus(selectedAIs: AIModel[]): void {
-  console.log(`\n[LLM] ═══ AI Connection Status ═══`)
-  for (const model of selectedAIs) {
-    const envVar = KEY_MAP[model]
-    const key = process.env[envVar]
-    if (key && key.length > 0) {
-      console.log(`[LLM] ✅ ${model.toUpperCase()} connected → model: ${MODEL_NAME[model]}`)
-    } else {
-      console.log(`[LLM] ❌ ${model.toUpperCase()} NOT connected — ${envVar} is missing or empty`)
-    }
-  }
-  console.log(`[LLM] ═══════════════════════════\n`)
+  // BYOK-only: every seat plays on the game owner's saved key (validated at
+  // game creation). Server env keys are never used for gameplay.
+  console.log(`[LLM] 🔑 BYOK seats: ${selectedAIs.map(m => m.toUpperCase()).join(', ')} — running on the owner's saved keys`)
 }
 
 // ─── Shared post-processing (store thought + devLog) ─────────────────────────
@@ -1231,28 +1213,32 @@ function finalizeDecision(model: string, raw: string, state: GameState, playerId
 // ─── OpenAI-compatible handler (chatgpt, grok, deepseek, groq) ──────────────
 
 interface OpenAICompatConfig {
-  envVar:   string
-  model:    string
+  id:       string
   label:    string
-  baseURL?: string
+  baseURL?: string   // default endpoint; a user-saved baseUrl overrides it
 }
 
 const OPENAI_COMPAT: Record<string, OpenAICompatConfig> = {
-  chatgpt:  { envVar: 'OPENAI_API_KEY',   model: 'gpt-4o-mini',              label: 'ChatGPT' },
-  grok:     { envVar: 'XAI_API_KEY',      model: 'grok-beta',                label: 'Grok',     baseURL: 'https://api.x.ai/v1' },
-  deepseek: { envVar: 'DEEPSEEK_API_KEY', model: 'deepseek-chat',            label: 'DeepSeek', baseURL: 'https://api.deepseek.com' },
-  groq:     { envVar: 'GROQ_API_KEY',     model: 'llama-3.3-70b-versatile',  label: 'Groq',     baseURL: 'https://api.groq.com/openai/v1' },
+  chatgpt:  { id: 'chatgpt',  label: 'ChatGPT' },
+  grok:     { id: 'grok',     label: 'Grok',      baseURL: 'https://api.x.ai/v1' },
+  deepseek: { id: 'deepseek', label: 'DeepSeek',  baseURL: 'https://api.deepseek.com' },
+  groq:     { id: 'groq',     label: 'Groq',      baseURL: 'https://api.groq.com/openai/v1' },
+  custom:   { id: 'custom',   label: 'Custom AI' },
 }
 
 async function askOpenAICompat(cfg: OpenAICompatConfig, state: GameState, playerId: string): Promise<ParsedDecision> {
-  const key = process.env[cfg.envVar]
-  if (!key) { console.error(`[LLM] ❌ ${cfg.envVar} is missing!`); throw new Error('No API key') }
-  console.log(`[LLM] 🤖 ${cfg.label} thinking...`)
-  const client = await getOpenAIClient(key, cfg.baseURL)
+  // BYOK ONLY — games always run on the owner's saved key, never server env vars.
+  const rt = await resolveProviderRuntime(state.userId, cfg.id)
+  if (!rt?.apiKey) { console.error(`[LLM] ❌ ${cfg.label} has no saved BYOK key for this user`); throw new Error('No API key') }
+  const model = rt.model
+  if (!model) throw new Error('No model configured')
+  const baseURL = rt.baseUrl ?? cfg.baseURL
+  console.log(`[LLM] 🤖 ${cfg.label} thinking... (user key)`)
+  const client = await getOpenAIClient(rt.apiKey, baseURL)
   const prompt = await buildPrompt(state, playerId)
   devLog(cfg.label.toLowerCase(), '📝 PROMPT LENGTH:', prompt.length, 'chars')
   const res = await client.chat.completions.create({
-    model: cfg.model, max_tokens: 300,
+    model, max_tokens: 300,
     messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
   })
   const raw = res.choices[0]?.message?.content ?? ''
@@ -1263,14 +1249,15 @@ async function askOpenAICompat(cfg: OpenAICompatConfig, state: GameState, player
 
 const REGISTRY: Record<AIModel, AskFn> = {
   claude: async (state, playerId) => {
-    const key = process.env.ANTHROPIC_API_KEY
-    if (!key) { console.error('[LLM] ❌ ANTHROPIC_API_KEY is missing!'); throw new Error('No API key') }
-    console.log(`[LLM] 🤖 Claude thinking...`)
-    const client = await getAnthropicClient(key)
+    // BYOK ONLY — games always run on the owner's saved key, never server env vars.
+    const rt = await resolveProviderRuntime(state.userId, 'claude')
+    if (!rt?.apiKey || !rt.model) { console.error('[LLM] ❌ Claude has no saved BYOK key/model for this user'); throw new Error('No API key') }
+    console.log(`[LLM] 🤖 Claude thinking... (user key)`)
+    const client = await getAnthropicClient(rt.apiKey)
     const prompt = await buildPrompt(state, playerId)
     devLog('claude', '📝 PROMPT LENGTH:', prompt.length, 'chars')
     const msg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001', max_tokens: 300,
+      model: rt.model, max_tokens: 300,
       system: SYSTEM,
       messages: [{ role: 'user', content: prompt }],
     })
@@ -1279,11 +1266,12 @@ const REGISTRY: Record<AIModel, AskFn> = {
   },
 
   gemini: async (state, playerId) => {
-    const key = process.env.GOOGLE_API_KEY
-    if (!key) { console.error('[LLM] ❌ GOOGLE_API_KEY is missing!'); throw new Error('No API key') }
-    console.log(`[LLM] 🤖 Gemini thinking...`)
-    const genAI = await getGoogleAIClient(key)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction: SYSTEM })
+    // BYOK ONLY — games always run on the owner's saved key, never server env vars.
+    const rt = await resolveProviderRuntime(state.userId, 'gemini')
+    if (!rt?.apiKey || !rt.model) { console.error('[LLM] ❌ Gemini has no saved BYOK key/model for this user'); throw new Error('No API key') }
+    console.log(`[LLM] 🤖 Gemini thinking... (user key)`)
+    const genAI = await getGoogleAIClient(rt.apiKey)
+    const model = genAI.getGenerativeModel({ model: rt.model, systemInstruction: SYSTEM })
     const prompt = await buildPrompt(state, playerId)
     devLog('gemini', '📝 PROMPT LENGTH:', prompt.length, 'chars')
     const res = await model.generateContent(prompt)
@@ -1295,6 +1283,7 @@ const REGISTRY: Record<AIModel, AskFn> = {
   grok:     async (state, playerId) => askOpenAICompat(OPENAI_COMPAT.grok, state, playerId),
   deepseek: async (state, playerId) => askOpenAICompat(OPENAI_COMPAT.deepseek, state, playerId),
   groq:     async (state, playerId) => askOpenAICompat(OPENAI_COMPAT.groq, state, playerId),
+  custom:   async (state, playerId) => askOpenAICompat(OPENAI_COMPAT.custom, state, playerId),
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
@@ -1477,31 +1466,32 @@ What did you learn? What patterns do you see in opponents? What would you change
     let raw = ''
 
     if (model === 'claude') {
-      const key = process.env.ANTHROPIC_API_KEY
-      if (!key) return null
-      const client = await getAnthropicClient(key)
+      const rt = await resolveProviderRuntime(state.userId, 'claude')
+      if (!rt?.apiKey || !rt.model) return null
+      const client = await getAnthropicClient(rt.apiKey)
       const msg = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001', max_tokens: 200,
+        model: rt.model, max_tokens: 200,
         system: REFLECT_SYSTEM,
         messages: [{ role: 'user', content: prompt }],
       })
       raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
     } else if (model === 'gemini') {
-      const key = process.env.GOOGLE_API_KEY
-      if (!key) return null
-      const genAI = await getGoogleAIClient(key)
-      const m = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction: REFLECT_SYSTEM })
+      const rt = await resolveProviderRuntime(state.userId, 'gemini')
+      if (!rt?.apiKey || !rt.model) return null
+      const genAI = await getGoogleAIClient(rt.apiKey)
+      const m = genAI.getGenerativeModel({ model: rt.model, systemInstruction: REFLECT_SYSTEM })
       const res = await m.generateContent(prompt)
       raw = res.response.text()
     } else {
       // OpenAI-compatible (chatgpt, grok, deepseek, groq) — reuse OPENAI_COMPAT config
       const cfg = OPENAI_COMPAT[model]
       if (!cfg) return null
-      const apiKey = process.env[cfg.envVar]
-      if (!apiKey) return null
-      const client = await getOpenAIClient(apiKey, cfg.baseURL)
+      const rt = await resolveProviderRuntime(state.userId, cfg.id)
+      if (!rt?.apiKey || !rt.model) return null
+      const client = await getOpenAIClient(rt.apiKey, rt.baseUrl ?? cfg.baseURL)
+      const mdl = rt.model
       const res = await client.chat.completions.create({
-        model: cfg.model, max_tokens: 200,
+        model: mdl, max_tokens: 200,
         messages: [{ role: 'system', content: REFLECT_SYSTEM }, { role: 'user', content: prompt }],
       })
       raw = res.choices[0]?.message?.content ?? ''

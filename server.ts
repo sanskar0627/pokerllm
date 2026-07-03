@@ -15,6 +15,7 @@ import { determineWinners } from '@/lib/handEvaluator'
 import { getAIDecision, logAIConnectionStatus, reflectOnHand, clearGameMemory, getGameMemories, addChatMessage, rehydrateAIMemory, type AIDecisionResult } from '@/lib/llmOrchestrator'
 import { promoteGameLearnings } from '@/lib/permanentMemory'
 import { getSocketSession } from '@/lib/socketAuth'
+import { resolveProviderRuntime } from '@/lib/aiProviders/service'
 import { cleanupUnverifiedUsers } from '@/lib/cleanup'
 import { prisma } from '@/lib/db'
 
@@ -36,7 +37,7 @@ const app = next({ dev })
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const VALID_AI_MODELS   = new Set<AIModel>(['claude', 'chatgpt', 'gemini', 'grok', 'deepseek', 'groq'])
+const VALID_AI_MODELS   = new Set<AIModel>(['claude', 'chatgpt', 'gemini', 'grok', 'deepseek', 'groq', 'custom'])
 const VALID_ACTIONS     = new Set(['fold', 'call', 'raise', 'check'])
 const MAX_GAMES_PER_IP  = 5           // max concurrent games per IP
 const GAME_TTL_MS       = 60 * 60 * 1000  // 1 hour — abandoned games cleaned up
@@ -799,6 +800,17 @@ app.prepare().then(async () => {
 
       const gameId = nanoid(8)
       const userId = (socket.data as { userId?: string }).userId ?? ''
+
+      // BYOK gate: EVERY AI seat requires the owner's saved API key + model.
+      // Server env keys are never used for gameplay — no config, no seat.
+      for (const ai of validated.selectedAIs) {
+        const rt = await resolveProviderRuntime(userId, ai)
+        if (!rt?.apiKey || !rt.model) {
+          socket.emit('game_error', `${ai.toUpperCase()} needs your API key and a model — open its card in AI Players to set it up`)
+          return
+        }
+      }
+
       const state  = createGame(validated, gameId, userId)
       setGameForce(gameId, state) // always persist on creation
 
