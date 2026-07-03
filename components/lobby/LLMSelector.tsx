@@ -1,8 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import type { AIModel } from '@/types/poker'
 import { AI_META_LIST } from '@/lib/aiMeta'
+import { PROVIDERS, type ProviderId, type ProviderConfigDTO } from '@/lib/aiProviders/catalog'
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   AI player selector with INLINE provider configuration.
+   Selecting a provider slides open a panel under its card:
+     column 1 — paste your API key (write-only; server returns last-4 only)
+     column 2 — Apple-style model list + free-form "custom model" row
+   The "Custom AI" card connects any OpenAI-compatible endpoint.
+   ──────────────────────────────────────────────────────────────────────────── */
 
 // ─── Custom Inline SVGs for AI Models ─────────────────────────────────────────
 
@@ -44,6 +54,15 @@ const GroqLogo = ({ className = "w-7 h-7" }: { className?: string }) => (
   </svg>
 )
 
+const CustomLogo = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+    <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+    <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+    <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+  </svg>
+)
+
 export function ModelLogo({ id, className }: { id: string; className?: string }) {
   if (id === 'claude') return <ClaudeLogo className={className} />
   if (id === 'chatgpt') return <ChatGPTLogo className={className} />
@@ -51,8 +70,423 @@ export function ModelLogo({ id, className }: { id: string; className?: string })
   if (id === 'grok') return <GrokLogo className={className} />
   if (id === 'deepseek') return <DeepSeekLogo className={className} />
   if (id === 'groq') return <GroqLogo className={className} />
+  if (id === 'custom') return <CustomLogo className={className} />
   return null
 }
+
+// ─── Shared bits ──────────────────────────────────────────────────────────────
+
+const inputCls =
+  'w-full rounded-lg px-3 py-2.5 font-game text-[13px] text-white/90 panel-inset ' +
+  'placeholder:text-white/20 focus:outline-none focus:border-[#FFD700]/40 transition-colors duration-200'
+
+function Spinner({ dark = false }: { dark?: boolean }) {
+  return <span className={`inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin align-middle ${dark ? 'border-[#1a0a2e]/25 border-t-[#1a0a2e]/80' : 'border-white/20 border-t-white/70'}`} />
+}
+
+type KeyStatus = 'none' | 'unverified' | 'valid' | 'invalid'
+
+function keyStatus(cfg?: ProviderConfigDTO): KeyStatus {
+  if (!cfg) return 'none'
+  return cfg.status === 'valid' ? 'valid' : cfg.status === 'invalid' ? 'invalid' : 'unverified'
+}
+
+const STATUS_DOT: Record<KeyStatus, string> = {
+  none:       '',
+  unverified: 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.7)]',
+  valid:      'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]',
+  invalid:    'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.7)]',
+}
+
+// ─── Inline config panel (slides open under a selected card) ─────────────────
+
+function ConfigPanel({
+  id, cfg, onSaved, onReady,
+}: {
+  id:      AIModel
+  cfg?:    ProviderConfigDTO
+  onSaved: (c: ProviderConfigDTO) => void
+  onReady: (id: AIModel) => void
+}) {
+  const info = PROVIDERS[id as ProviderId]
+  const knownModel = cfg && info.models.some(m => m.id === cfg.model)
+
+  const [apiKey, setApiKey]           = useState('')
+  const [showKey, setShowKey]         = useState(false)
+  const [keyFocused, setKeyFocused]   = useState(false)
+  const [model, setModel]             = useState(knownModel ? cfg!.model : (info.models[0]?.id ?? ''))
+  const [customModel, setCustomModel] = useState(cfg && !knownModel ? cfg.model : '')
+  const [customRow, setCustomRow]     = useState(Boolean(cfg && !knownModel) || info.models.length === 0)
+  const [baseUrl, setBaseUrl]         = useState(cfg?.baseUrl ?? info.baseUrl ?? '')
+  const [customName, setCustomName]   = useState(cfg?.customName ?? '')
+  const [busy, setBusy]               = useState<'save' | 'test' | 'model' | null>(null)
+  const [msg, setMsg]                 = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
+
+  const activeModel = customRow ? customModel.trim() : model
+
+  async function api(path: string, init: RequestInit) {
+    const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init })
+    const data = await res.json().catch(() => ({} as Record<string, unknown>))
+    return { ok: res.ok, data: data as Record<string, unknown> }
+  }
+
+  /** Persist just a model change (only possible once a key is saved). */
+  async function saveModel(nextModel: string) {
+    if (!cfg || !nextModel || busy) return
+    setBusy('model'); setMsg(null)
+    const { ok, data } = await api('/api/settings/providers', {
+      method: 'PUT',
+      body: JSON.stringify({
+        provider: id, model: nextModel,
+        baseUrl: info.allowsBaseUrl ? (baseUrl.trim() || undefined) : undefined,
+        customName: info.isCustom ? (customName.trim() || undefined) : undefined,
+      }),
+    })
+    setBusy(null)
+    if (ok) {
+      onSaved(data.config as unknown as ProviderConfigDTO)
+      setMsg({ text: 'Model saved', kind: 'ok' })
+      setTimeout(() => setMsg(m => m?.text === 'Model saved' ? null : m), 1800)
+    } else {
+      setMsg({ text: String(data.error ?? 'Could not save model'), kind: 'err' })
+    }
+  }
+
+  function pickModel(m: string) {
+    setCustomRow(false)
+    setModel(m)
+    if (cfg) void saveModel(m)
+  }
+
+  /** Save key (+ everything else), then auto-test the connection. */
+  async function saveKey() {
+    if (!activeModel) return setMsg({ text: 'Choose a model first', kind: 'err' })
+    if (!cfg && !apiKey.trim() && info.requiresKey) return setMsg({ text: 'Paste your API key', kind: 'err' })
+    if (info.isCustom && !baseUrl.trim()) return setMsg({ text: 'Base URL is required', kind: 'err' })
+
+    setBusy('save'); setMsg(null)
+    const { ok, data } = await api('/api/settings/providers', {
+      method: 'PUT',
+      body: JSON.stringify({
+        provider: id,
+        apiKey: apiKey.trim() || undefined,
+        model: activeModel,
+        baseUrl: info.allowsBaseUrl ? (baseUrl.trim() || undefined) : undefined,
+        customName: info.isCustom ? (customName.trim() || undefined) : undefined,
+      }),
+    })
+    if (!ok) {
+      setBusy(null)
+      return setMsg({ text: String(data.error ?? 'Save failed'), kind: 'err' })
+    }
+    onSaved(data.config as unknown as ProviderConfigDTO)
+    setApiKey('')
+
+    // Auto-test right after saving a key — one less click.
+    setBusy('test')
+    const t = await api('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ provider: id }) })
+    setBusy(null)
+    if (t.data.config) onSaved(t.data.config as unknown as ProviderConfigDTO)
+    if (t.ok && t.data.ok) {
+      setMsg({ text: `${String(t.data.message ?? 'Connected')} — seated at the table`, kind: 'ok' })
+      onReady(id) // key verified → seat this AI automatically
+    } else {
+      setMsg({ text: String(t.data.message ?? t.data.error ?? 'Key saved, but the test failed'), kind: 'err' })
+    }
+  }
+
+  async function testKey() {
+    setBusy('test'); setMsg(null)
+    const { ok, data } = await api('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ provider: id }) })
+    setBusy(null)
+    if (data.config) onSaved(data.config as unknown as ProviderConfigDTO)
+    setMsg(ok && data.ok
+      ? { text: String(data.message ?? 'Connected'), kind: 'ok' }
+      : { text: String(data.message ?? data.error ?? 'Test failed'), kind: 'err' })
+  }
+
+  const status = keyStatus(cfg)
+
+  // Staggered entrance for the model rows
+  const listStagger = { hidden: {}, show: { transition: { staggerChildren: 0.035, delayChildren: 0.08 } } }
+  const rowFade = { hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] as const } } }
+
+  return (
+    <div className="relative border-t border-white/[0.06]" style={{ background: 'rgba(0,0,0,0.28)' }}>
+      {/* Gold hairline at the seam */}
+      <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-[#FFD700]/30 to-transparent" />
+
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.15fr] gap-5 sm:gap-6 px-4 sm:px-5 pt-4 pb-3">
+
+        {/* ── Column 1: API key ── */}
+        <div className="flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-pixel text-[7px] text-[#FFD700]/60 uppercase tracking-[2px] flex items-center gap-1.5">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              {info.isCustom ? 'Your Endpoint' : `${info.label} API Key`}
+            </span>
+            {/* Status chip lives in the header — keeps the column balanced */}
+            {status === 'valid' && (
+              <span className="font-game text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-400/25 text-emerald-300/90 bg-emerald-500/10">
+                Connected ••••{cfg!.keyLast4}
+              </span>
+            )}
+            {status === 'unverified' && (
+              <span className="font-game text-[10px] font-semibold px-2 py-0.5 rounded-full border border-amber-400/25 text-amber-300/90 bg-amber-500/10">
+                Untested
+              </span>
+            )}
+            {status === 'invalid' && (
+              <span className="font-game text-[10px] font-semibold px-2 py-0.5 rounded-full border border-red-400/25 text-red-300/90 bg-red-500/10">
+                Invalid key
+              </span>
+            )}
+            {status === 'none' && !info.isCustom && (
+              <span className="font-game text-[10px] font-semibold px-2 py-0.5 rounded-full border border-[#FFD700]/20 text-[#FFD700]/50 bg-[#FFD700]/[0.04]">
+                Key required
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-2.5">
+            {info.isCustom && (
+              <input
+                type="text" value={customName} maxLength={40} spellCheck={false}
+                onChange={e => { setCustomName(e.target.value); setMsg(null) }}
+                placeholder="Provider name (optional)" className={inputCls}
+              />
+            )}
+            {info.allowsBaseUrl && (
+              <input
+                type="text" value={baseUrl} spellCheck={false} autoCapitalize="off"
+                onChange={e => { setBaseUrl(e.target.value); setMsg(null) }}
+                placeholder="https://api.example.com/v1" className={inputCls}
+              />
+            )}
+
+            {/* Key input — icon, focus glow, show/hide */}
+            <div
+              className="relative rounded-lg transition-shadow duration-200"
+              style={{ boxShadow: keyFocused
+                ? '0 0 0 1.5px rgba(255,215,0,0.4), 0 0 18px rgba(255,215,0,0.1)'
+                : 'none' }}
+            >
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 transition-colors duration-200"
+                    style={{ color: keyFocused ? '#FFD700' : 'rgba(255,255,255,0.25)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                </svg>
+              </span>
+              <input
+                type={showKey ? 'text' : 'password'} value={apiKey} autoComplete="off" spellCheck={false}
+                onChange={e => { setApiKey(e.target.value); setMsg(null) }}
+                onFocus={() => setKeyFocused(true)}
+                onBlur={() => setKeyFocused(false)}
+                placeholder={cfg ? `Saved ••••${cfg.keyLast4} — paste to replace` : 'Enter your API key'}
+                className={inputCls + ' pl-9 pr-9'}
+              />
+              {apiKey && (
+                <button
+                  type="button"
+                  onClick={() => setShowKey(v => !v)}
+                  aria-label={showKey ? 'Hide key' : 'Show key'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/55 transition-colors"
+                >
+                  {showKey ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  )}
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={saveKey}
+                disabled={busy !== null}
+                className="flex items-center justify-center gap-2 flex-1 py-2.5 rounded-lg font-game text-[12.5px] font-bold text-[#1a0a2e]
+                           transition-all duration-150 hover:-translate-y-px active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, #FFE27A 0%, #FFD700 45%, #C49630 100%)', boxShadow: '0 3px 14px rgba(255,215,0,0.22), inset 0 1px 0 rgba(255,255,255,0.3)' }}
+              >
+                {busy === 'save' && <Spinner dark />}
+                {cfg ? 'Update key' : 'Save & connect'}
+              </button>
+              {cfg && (
+                <button
+                  onClick={testKey}
+                  disabled={busy !== null}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg font-game text-[12.5px] font-semibold text-white/60
+                             panel-inset hover:border-[#FFD700]/35 hover:text-white/85 transition-all duration-150 active:scale-[0.98]
+                             disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {busy === 'test' ? <Spinner /> : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                  )}
+                  Test
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Footer: docs link + trust note — anchored to the bottom */}
+          <div className="mt-auto pt-3.5 space-y-1.5">
+            {info.docsUrl && (
+              <a
+                href={info.docsUrl} target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="group inline-flex items-center gap-1 font-game text-[10.5px] text-[#FFD700]/45 hover:text-[#FFD700]/80 transition-colors"
+              >
+                Get a key from {info.company}
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                     className="transition-transform duration-200 group-hover:translate-x-px group-hover:-translate-y-px">
+                  <path d="M7 17 17 7" /><path d="M8 7h9v9" />
+                </svg>
+              </a>
+            )}
+            <p className="font-game text-[10px] text-white/20 flex items-center gap-1.5">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,215,0,0.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              AES-256 encrypted · never shown again · only you can use it
+            </p>
+          </div>
+        </div>
+
+        {/* ── Column 2: Apple-style model list ── */}
+        <div className="sm:border-l sm:border-white/[0.06] sm:pl-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-pixel text-[7px] text-[#FFD700]/60 uppercase tracking-[2px]">Model</span>
+            {info.models.length > 0 && (
+              <span className="font-game text-[9.5px] text-white/25 tracking-wide">{info.models.length} available</span>
+            )}
+          </div>
+          {!cfg && (
+            <p className="font-game text-[10.5px] text-white/25 mb-2 -mt-1">Save your API key and pick a model to seat this player.</p>
+          )}
+
+          <div className="panel-inset rounded-xl overflow-hidden">
+            <motion.div
+              variants={listStagger} initial="hidden" animate="show"
+              className="max-h-[236px] overflow-y-auto thinking-scroll"
+            >
+              {info.models.map((m, i) => {
+                const active = !customRow && model === m.id
+                return (
+                  <motion.button
+                    key={m.id}
+                    variants={rowFade}
+                    whileTap={{ scale: 0.985 }}
+                    onClick={() => pickModel(m.id)}
+                    className={`relative w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors duration-150
+                      ${i > 0 ? 'border-t border-white/[0.05]' : ''}
+                      ${active ? '' : 'hover:bg-white/[0.03]'}`}
+                  >
+                    {/* Sliding gold highlight — glides between rows */}
+                    {active && (
+                      <motion.span
+                        layoutId={`model-highlight-${id}`}
+                        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                        className="absolute inset-0 bg-gradient-to-r from-[#FFD700]/[0.11] to-[#FFD700]/[0.04] border-l-2 border-[#FFD700] pointer-events-none"
+                      />
+                    )}
+                    <span className="relative min-w-0">
+                      <span className={`font-game text-[13px] font-semibold block truncate transition-colors duration-150 ${active ? 'text-[#FFD700]' : 'text-white/80'}`}>{m.label}</span>
+                      <span className="font-game text-[10.5px] text-white/35 block truncate">{m.description}</span>
+                    </span>
+                    <span className="relative shrink-0 w-[15px] h-[15px]">
+                      <AnimatePresence>
+                        {active && (
+                          <motion.svg
+                            initial={{ scale: 0.3, opacity: 0, rotate: -30 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} exit={{ scale: 0.3, opacity: 0 }}
+                            transition={{ type: 'spring', stiffness: 520, damping: 26 }}
+                            width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFD700" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"
+                          >
+                            <path d="M20 6 9 17l-5-5" />
+                          </motion.svg>
+                        )}
+                      </AnimatePresence>
+                    </span>
+                  </motion.button>
+                )
+              })}
+
+              {/* Custom model row — always last */}
+              <motion.div variants={rowFade} className={`relative ${info.models.length > 0 ? 'border-t border-white/[0.05]' : ''}`}>
+                {customRow && (
+                  <motion.span
+                    layoutId={`model-highlight-${id}`}
+                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    className="absolute inset-0 bg-gradient-to-r from-[#FFD700]/[0.11] to-[#FFD700]/[0.04] border-l-2 border-[#FFD700] pointer-events-none"
+                  />
+                )}
+                {customRow ? (
+                  <div className="relative flex items-center gap-2 px-3.5 py-2.5">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,215,0,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                    <input
+                      type="text" value={customModel} autoFocus={info.models.length > 0} spellCheck={false} autoCapitalize="off"
+                      onChange={e => { setCustomModel(e.target.value); setMsg(null) }}
+                      onKeyDown={e => { if (e.key === 'Enter' && cfg && customModel.trim()) void saveModel(customModel.trim()) }}
+                      placeholder="model-id (exact)"
+                      className="flex-1 bg-transparent font-game text-[13px] text-white/90 placeholder:text-white/20 focus:outline-none caret-[#FFD700]"
+                    />
+                    {cfg && customModel.trim() && customModel.trim() !== cfg.model && (
+                      <button
+                        onClick={() => saveModel(customModel.trim())}
+                        className="font-game text-[10.5px] text-[#FFD700] font-bold hover:text-white transition-colors shrink-0"
+                      >
+                        {busy === 'model' ? <Spinner /> : 'SAVE'}
+                      </button>
+                    )}
+                    {info.models.length > 0 && (
+                      <button onClick={() => setCustomRow(false)} className="text-white/25 hover:text-white/55 transition-colors shrink-0" aria-label="Back to list">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <motion.button
+                    whileTap={{ scale: 0.985 }}
+                    onClick={() => setCustomRow(true)}
+                    className="relative w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-white/[0.03] transition-colors duration-150"
+                  >
+                    <span>
+                      <span className="font-game text-[13px] font-semibold text-white/55 block">Custom model…</span>
+                      <span className="font-game text-[10.5px] text-white/25 block">Type any model id</span>
+                    </span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="m9 18 6-6-6-6"/></svg>
+                  </motion.button>
+                )}
+              </motion.div>
+            </motion.div>
+          </div>
+        </div>
+      </div>
+
+      {/* Feedback line — fixed slot so the panel never jumps */}
+      <div className="px-4 sm:px-5 pb-3 min-h-[26px]">
+        <AnimatePresence>
+          {(msg || busy === 'model') && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className={`font-game text-[11.5px] flex items-center gap-1.5
+                ${!msg ? 'text-white/30' : msg.kind === 'ok' ? 'text-emerald-300/90' : 'text-red-300/90'}`}
+            >
+              {busy === 'model' && !msg ? 'Saving…' : (
+                <>
+                  {msg?.kind === 'ok' && (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  )}
+                  {msg?.text}
+                </>
+              )}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main selector ────────────────────────────────────────────────────────────
 
 interface Props {
   selected: AIModel[]
@@ -61,12 +495,50 @@ interface Props {
 }
 
 export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
+  const [configs, setConfigs] = useState<Map<string, ProviderConfigDTO>>(new Map())
+  const [expanded, setExpanded] = useState<AIModel | null>(null)
+
+  // Load saved provider configs once — never blocks the lobby.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/settings/providers')
+      .then(r => r.ok ? r.json() : { configs: [] })
+      .then((data: { configs?: ProviderConfigDTO[] }) => {
+        if (!cancelled) setConfigs(new Map((data.configs ?? []).map(c => [c.provider, c])))
+      })
+      .catch(() => { /* lobby works without configs (house keys) */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const upsertConfig = (c: ProviderConfigDTO) =>
+    setConfigs(prev => new Map(prev).set(c.provider, c))
+
+  /** BYOK-only: a seat requires the user's saved key + model (and a working one). */
+  const isReady = (id: AIModel) => {
+    const cfg = configs.get(id)
+    if (!cfg || !cfg.model || cfg.status === 'invalid') return false
+    if (id === 'custom' && !cfg.baseUrl) return false
+    return true
+  }
+
+  /** Called by the panel when a key is saved + verified — seat the AI. */
+  const seatIfUnseated = (id: AIModel) => {
+    if (!selected.includes(id)) onChange([...selected, id])
+  }
+
   function toggle(id: AIModel) {
-    onChange(
-      selected.includes(id)
-        ? selected.filter(m => m !== id)
-        : [...selected, id]
-    )
+    if (selected.includes(id)) {
+      onChange(selected.filter(m => m !== id))
+      if (expanded === id) setExpanded(null)
+    } else {
+      // No saved key → open the config panel instead of seating.
+      if (!isReady(id)) {
+        setExpanded(id)
+        return
+      }
+      onChange([...selected, id])
+      setExpanded(id)
+    }
   }
 
   return (
@@ -81,54 +553,100 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {AI_META_LIST.map(m => {
           const active = selected.includes(m.id)
+          const isOpen = expanded === m.id
+          const cfg = configs.get(m.id)
+          const status = keyStatus(cfg)
+          const isCustom = m.id === 'custom'
+          const displayName = isCustom && cfg?.customName ? cfg.customName : m.label
+
           return (
-            <button
+            <motion.div
               key={m.id}
-              onClick={() => toggle(m.id)}
-              className={`relative flex items-center gap-4 px-4 py-3.5 rounded-xl border text-left transition-all duration-200 overflow-hidden active:scale-[0.99]
+              layout
+              transition={{ layout: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] } }}
+              className={`relative rounded-xl border overflow-hidden transition-colors duration-200
+                ${isOpen ? 'sm:col-span-2' : ''}
                 ${active
                   ? 'bg-[#FFD700]/10 border-[#FFD700]/70 shadow-[0_0_20px_rgba(255,215,0,0.18),inset_0_1px_0_rgba(255,255,255,0.06)]'
-                  : 'panel-inset hover:border-[#FFD700]/35 hover:bg-white/[0.03] hover:-translate-y-px'
+                  : 'panel-inset hover:border-[#FFD700]/35'
                 }`}
             >
               {/* Gold accent bar */}
               <div className={`absolute left-0 top-0 bottom-0 w-1 bg-[#FFD700] transition-opacity ${active ? 'opacity-100' : 'opacity-0'}`} />
 
-              {/* Avatar — custom inline SVGs */}
-              <div className={`w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden transition-all duration-200 border
-                ${active
-                  ? 'bg-black/40 border-[#FFD700]/70 shadow-[0_0_12px_rgba(255,215,0,0.25)] text-[#FFD700]'
-                  : 'bg-black/25 border-white/10 text-white/50'}`}
-              >
-                <ModelLogo id={m.id} />
-              </div>
-
-              {/* Text */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className={`font-pixel font-bold text-[11px] ${active ? 'text-white' : 'text-white/40'}`}>
-                    {m.label}
-                  </span>
-                  <span className={`font-pixel text-[6px] px-2 py-0.5 rounded border transition-all
-                    ${active ? 'bg-[#FFD700]/20 text-[#FFD700] border-[#FFD700]/40' : 'bg-white/5 text-white/20 border-white/10'}`}>
-                    {m.company}
-                  </span>
+              {/* Card header — click to select + open */}
+              <button onClick={() => toggle(m.id)} className="w-full flex items-center gap-4 px-4 py-3.5 text-left active:scale-[0.995] transition-transform">
+                {/* Avatar */}
+                <div className={`relative w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden transition-all duration-200 border
+                  ${active
+                    ? 'bg-black/40 border-[#FFD700]/70 shadow-[0_0_12px_rgba(255,215,0,0.25)] text-[#FFD700]'
+                    : 'bg-black/25 border-white/10 text-white/50'}`}
+                >
+                  <ModelLogo id={m.id} />
+                  {status !== 'none' && (
+                    <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
+                  )}
                 </div>
-                <p className={`font-game text-[12px] mt-1.5 truncate transition-colors ${active ? 'text-white/60' : 'text-white/35'}`}>
-                  {m.tagline}
-                </p>
-              </div>
 
-              {/* Checkbox */}
-              <div className={`w-5.5 h-5.5 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all
-                ${active ? 'bg-[#FFD700] border-transparent shadow-[0_0_8px_rgba(255,215,0,0.45)]' : 'border-white/25 bg-transparent'}`}>
-                {active && (
-                  <svg className="w-3.5 h-3.5 text-[#1a0a2e]" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                {/* Text */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-pixel font-bold text-[11px] truncate ${active ? 'text-white' : 'text-white/40'}`}>
+                      {displayName}
+                    </span>
+                    <span className={`font-pixel text-[6px] px-2 py-0.5 rounded border transition-all shrink-0
+                      ${active ? 'bg-[#FFD700]/20 text-[#FFD700] border-[#FFD700]/40' : 'bg-white/5 text-white/20 border-white/10'}`}>
+                      {m.company}
+                    </span>
+                  </div>
+                  <p className={`font-game text-[12px] mt-1.5 truncate transition-colors ${active ? 'text-white/60' : 'text-white/35'}`}>
+                    {isReady(m.id) ? (cfg?.model ?? m.tagline) : (isCustom ? 'Add your endpoint to seat this player' : 'Add your API key to play')}
+                  </p>
+                </div>
+
+                {/* Config chevron — expands without changing selection */}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Configure ${m.label}`}
+                  onClick={e => { e.stopPropagation(); setExpanded(prev => prev === m.id ? null : m.id) }}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setExpanded(prev => prev === m.id ? null : m.id) } }}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-white/30 hover:text-[#FFD700]/80 hover:bg-white/[0.04] transition-colors shrink-0"
+                >
+                  <motion.svg
+                    animate={{ rotate: isOpen ? 180 : 0 }}
+                    width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </motion.svg>
+                </span>
+
+                {/* Checkbox */}
+                <div className={`w-5.5 h-5.5 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all
+                  ${active ? 'bg-[#FFD700] border-transparent shadow-[0_0_8px_rgba(255,215,0,0.45)]' : 'border-white/25 bg-transparent'}`}>
+                  {active && (
+                    <svg className="w-3.5 h-3.5 text-[#1a0a2e]" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </div>
+              </button>
+
+              {/* Slide-down config panel */}
+              <AnimatePresence initial={false}>
+                {isOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+                    className="overflow-hidden"
+                  >
+                    <ConfigPanel id={m.id} cfg={cfg} onSaved={upsertConfig} onReady={seatIfUnseated} />
+                  </motion.div>
                 )}
-              </div>
-            </button>
+              </AnimatePresence>
+            </motion.div>
           )
         })}
       </div>

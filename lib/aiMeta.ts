@@ -108,6 +108,21 @@ export const AI_META: Record<AIModel, AIMeta> = {
     dot:          'bg-[#FFD700]',
     cardBack:     'from-[#3d1a6e] to-[#1a0a2e]',
   },
+  custom: {
+    id:           'custom',
+    label:        'Custom AI',
+    company:      'Your Provider',
+    tagline:      'Any OpenAI-compatible model',
+    logoUrl:      '/images/favicon-64.png',
+    border:       'border-[#FFD700]/60',
+    activeBorder: 'border-[#FFD700]',
+    shadow:       'shadow-[#FFD700]/30',
+    bg:           'bg-[#FFD700]',
+    bgMuted:      'bg-[#FFD700]/10',
+    text:         'text-[#FFD700]',
+    dot:          'bg-[#FFD700]',
+    cardBack:     'from-[#3d1a6e] to-[#1a0a2e]',
+  },
 }
 
 export const AI_META_LIST = Object.values(AI_META)

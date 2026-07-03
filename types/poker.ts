@@ -24,6 +24,7 @@ export type AIModel =
   | 'grok'
   | 'deepseek'
   | 'groq'
+  | 'custom'      // user-defined OpenAI-compatible provider (BYOK settings)
 
 export interface Player {
   id:        string
