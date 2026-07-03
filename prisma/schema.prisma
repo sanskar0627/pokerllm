@@ -22,6 +22,7 @@ model User {
   gameRecords     GameRecord[]
   aiPlayerProfiles AiPlayerProfile[]
   aiNotes         AiNote[]
+  aiProviderConfigs AiProviderConfig[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -132,4 +133,32 @@ model AiGlobalInsight {
 
   @@unique([aiModel, text])                    // no duplicate insights per model
   @@index([aiModel])
+}
+
+// ─── BYOK AI Provider Settings ───────────────────────────────────────────────
+// One row per (user, provider). API keys are AES-256-GCM encrypted with the
+// owner's userId as AAD — see lib/aiProviders/crypto.ts and
+// docs/AI_PROVIDER_SETTINGS.md for the full security design.
+
+model AiProviderConfig {
+  id              String    @id @default(cuid())
+  userId          String                           // owner — every read/write is scoped to this
+  provider        String                           // whitelisted id: claude|chatgpt|gemini|grok|deepseek|groq|mistral|openrouter|ollama|custom
+  encryptedKey    String                           // v1.<iv>.<ciphertext>.<tag> (base64url) — never returned by the API
+  keyLast4        String                           // display-only suffix for "••••1234"
+  model           String                           // user-selected model id for this provider
+  customName      String?                          // display name for the "custom" provider
+  baseUrl         String?                          // endpoint for custom / ollama providers
+  isActive        Boolean   @default(true)         // soft-disable without deleting the key
+  status          String    @default("unverified") // unverified | valid | invalid
+  lastValidatedAt DateTime?                        // when the key last passed a live check
+  lastError       String?                          // sanitized reason the last validation failed
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])                     // one config per provider per user
+  @@index([userId])
 }
