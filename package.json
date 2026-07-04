@@ -6,7 +6,7 @@
     "dev": "bun server.ts",
     "build": "next build",
     "start": "NODE_ENV=production bun server.ts",
-    "lint": "eslint",
+    "lint": "eslint .",
     "test": "echo 'No test runner configured yet' && exit 0",
     "typecheck": "tsc --noEmit"
   },

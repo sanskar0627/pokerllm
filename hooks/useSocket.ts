@@ -148,6 +148,7 @@ export function useSocket(): UseSocketReturn {
 
   // Clear thinkingId when game state updates
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: clear the thinking spinner the moment fresh state lands
     if (gameState) setThinkingId(null)
   }, [gameState])
 
@@ -172,7 +173,9 @@ export function useSocket(): UseSocketReturn {
     socketRef.current?.emit('leave_game', gid)
   }, [])
 
+  // eslint-disable-next-line react-hooks/refs -- intentional: consumers need the live socket instance; it is stable after connect
   return {
+    // eslint-disable-next-line react-hooks/refs -- (same suppression as above; the rule reports both sites)
     socket:     socketRef.current,
     connected,
     gameState,

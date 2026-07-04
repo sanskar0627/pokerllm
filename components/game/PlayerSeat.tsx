@@ -153,8 +153,10 @@ export const PlayerSeat = memo(function PlayerSeat({ player, isActive, isDealer,
   const animatedCardsRef = useRef<Set<string>>(new Set())
 
   // Determine which cards need animation (only new ones)
+  // eslint-disable-next-line react-hooks/refs -- intentional: dedup guard so deal animations never replay on re-render
   const cardAnimationState = player.cards.map((card) => {
     const key = cardKey(card)
+    // eslint-disable-next-line react-hooks/refs -- intentional: dedup guard so deal animations never replay on re-render
     if (animatedCardsRef.current.has(key)) {
       return true // skip animation — already shown
     }
