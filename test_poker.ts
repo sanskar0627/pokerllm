@@ -1,6 +1,6 @@
 import { evaluateHand, getBestHand, determineWinners } from '@/lib/handEvaluator'
 import { createDeck, shuffleDeck, dealHoleCards, processAction, advancePhase, isBettingRoundOver, rotateBlinds, createGame } from '@/lib/gameEngine'
-import type { Card, GameState, Player } from '@/types/poker'
+import type { AIModel, Card, GameState, Player } from '@/types/poker'
 
 function card(rank: string, suit: string): Card {
   return { rank, suit } as Card
@@ -78,7 +78,7 @@ assert(shuffled.length === 52, `Shuffled deck has 52 cards`)
 
 // Create game
 const game = createGame({
-  selectedAIs: ['groq' as any],
+  selectedAIs: ['groq' as AIModel],
   humanPlayerName: 'TestHuman',
   startingStack: 5000,
   smallBlind: 25,
@@ -170,7 +170,7 @@ assert(foldWinners[0].amount === foldState.pot, `Fold winner gets pot: ${foldWin
 // Raise mechanics
 console.log('\n── Raise Mechanics ──')
 let rState = dealHoleCards(createGame({
-  selectedAIs: ['groq' as any],
+  selectedAIs: ['groq' as AIModel],
   humanPlayerName: 'Raiser',
   startingStack: 5000,
   smallBlind: 25,
@@ -178,7 +178,7 @@ let rState = dealHoleCards(createGame({
   watchOnly: false,
 }, 'raise_test'))
 
-let rp = rState.players[rState.currentTurnIdx]
+const rp = rState.players[rState.currentTurnIdx]
 rState = processAction(rState, rp.id, 'raise', 150)
 assert(rState.currentBet === 150, `After raise to 150, currentBet=${rState.currentBet}`)
 // The other player should need to act now

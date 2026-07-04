@@ -86,15 +86,16 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
   const [raiseAmount, setRaiseAmount] = useState<number>(0)
   const [showRaise,   setShowRaise]   = useState(false)
 
+  // NOTE: all hooks below must run unconditionally (rules-of-hooks), so the
+  // player lookup uses safe fallbacks and the early returns happen after them.
   const player = gameState.players.find(p => p.id === playerId)
-  if (!player) return null
 
   const isMyTurn   = gameState.players[gameState.currentTurnIdx]?.id === playerId
-  const callAmount = Math.max(0, gameState.currentBet - player.bet)
+  const callAmount = Math.max(0, gameState.currentBet - (player?.bet ?? 0))
   const canCheck   = callAmount === 0
   const minRaise   = gameState.currentBet * 2 || gameState.bigBlind * 2
-  const maxRaise   = player.stack + player.bet
-  const zeroStack  = player.stack <= 0
+  const maxRaise   = (player?.stack ?? 0) + (player?.bet ?? 0)
+  const zeroStack  = (player?.stack ?? 0) <= 0
   const bb         = gameState.bigBlind
 
   // Snap a value to the nearest big-blind increment, clamped to [minRaise, maxRaise]
@@ -128,6 +129,9 @@ export function ActionButtons({ gameState, playerId, onAction }: Props) {
   const incrementBind = useHoldRepeat(
     useCallback(() => setRaiseAmount(a => snap((a || minRaise) + bb)), [minRaise, bb])
   )
+
+  // Early returns AFTER all hooks
+  if (!player) return null
 
   if (!isMyTurn || player.folded || gameState.phase === 'showdown' || gameState.phase === 'ended') {
     return (

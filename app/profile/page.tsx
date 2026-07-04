@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -230,7 +231,7 @@ export default function ProfilePage() {
   // Fetch profile data
   useEffect(() => {
     if (status !== 'authenticated') return
-    setLoading(true)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: reset fetch state when auth status flips
     setError(null)
     fetch('/api/profile')
       .then(r => {
@@ -252,6 +253,7 @@ export default function ProfilePage() {
   // Fetch leaderboard when tab switches
   useEffect(() => {
     if (tab !== 'leaderboard' || leaderboard.length > 0) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: show spinner for the tab's first fetch
     setLbLoading(true)
     fetch('/api/profile/leaderboard')
       .then(r => {
@@ -302,9 +304,9 @@ export default function ProfilePage() {
               >
                 RETRY
               </button>
-              <a href="/" className="font-pixel text-[7px] sm:text-[8px] text-white/50 border border-white/15 rounded-lg px-4 py-2 hover:text-white/70 transition-all touch-manipulation">
+              <Link href="/" className="font-pixel text-[7px] sm:text-[8px] text-white/50 border border-white/15 rounded-lg px-4 py-2 hover:text-white/70 transition-all touch-manipulation">
                 LOBBY
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -328,13 +330,13 @@ export default function ProfilePage() {
             <img src="/images/topbar-bg.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/40" />
             <div className="relative z-10 flex items-center justify-between px-2.5 sm:px-5 py-1.5 sm:py-3">
-              <a
+              <Link
                 href="/"
                 className="font-pixel text-[6px] sm:text-[9px] text-[#FFD700] hover:text-[#FFD700]/80 bg-black/40 border border-[#FFD700]/30 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2 transition-all active:scale-95 tracking-wide shadow-md touch-manipulation min-h-[32px] flex items-center gap-1"
               >
                 <IconArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 <span className="hidden sm:inline">LOBBY</span>
-              </a>
+              </Link>
               <h1 className="font-pixel font-bold text-[9px] sm:text-[14px] text-[#FFD700] tracking-[2px] sm:tracking-[3px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                 PROFILE
               </h1>
@@ -482,12 +484,12 @@ export default function ProfilePage() {
                   <IconCards className="w-10 h-10 sm:w-12 sm:h-12 text-[#FFD700]/30 mx-auto mb-3 sm:mb-4" />
                   <p className="font-pixel text-[7px] sm:text-[10px] text-white/50 tracking-[2px] mb-1.5 sm:mb-2">NO GAMES YET</p>
                   <p className="font-game text-[11px] sm:text-[12px] text-white/30 mb-4 sm:mb-5">Play your first game to start tracking stats</p>
-                  <a
+                  <Link
                     href="/"
                     className="inline-block font-pixel text-[7px] sm:text-[8px] text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/30 rounded-lg px-4 sm:px-5 py-2 sm:py-2.5 hover:bg-[#FFD700]/20 transition-all tracking-wider touch-manipulation"
                   >
                     PLAY NOW
-                  </a>
+                  </Link>
                 </div>
               )}
             </div>

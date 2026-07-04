@@ -62,7 +62,9 @@ export default function SignupPage() {
   useEffect(() => {
     const savedName = sessionStorage.getItem('signup_form_name')
     const savedEmail = sessionStorage.getItem('signup_form_email')
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: one-time form restore from sessionStorage
     if (savedName) setName(savedName)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: one-time form restore from sessionStorage
     if (savedEmail) setEmail(savedEmail)
   }, [])
 

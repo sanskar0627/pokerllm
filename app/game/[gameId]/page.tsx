@@ -19,7 +19,8 @@ export default function GamePage({ params }: Props) {
   const { playSound } = useAudio()
 
   const { socket, connected, gameState, winners, thinkingId, error, nextRound, aiReflections, chatBubbles, chatLog, turnTimer, aiStatusMessages, aiThinkingLog, sendChat, leaveGame } = useSocket()
-  const [playerId, setPlayerId] = useState<string>('')
+  // Derived, not state — the id is fully determined by the game id
+  const playerId = `human_${gameId}`
   // Removed fold-win auto-advance states
 
   // SFX triggers
@@ -57,10 +58,8 @@ export default function GamePage({ params }: Props) {
   // socket.data gets re-set on the server after any disconnect/reconnect
   useEffect(() => {
     if (!socket || !connected) return
-    const pid = `human_${gameId}`
-    setPlayerId(pid)
-    socket.emit('join_game', gameId, pid)
-  }, [socket, gameId, connected])
+    socket.emit('join_game', gameId, playerId)
+  }, [socket, gameId, connected, playerId])
 
   // Redirect to home if game doesn't exist (stale URL / server restart)
   useEffect(() => {

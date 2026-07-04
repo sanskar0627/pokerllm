@@ -55,24 +55,28 @@ function LightRays() {
 // ─── Floating particles ────────────────────────────────────────────────────
 
 function Sparkles() {
+  // Deterministic pseudo-random layout — render must stay pure (no Math.random)
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {Array.from({ length: 20 }).map((_, i) => (
-        <div
-          key={i}
-          className="absolute rounded-full animate-dust"
-          style={{
-            width: 2 + Math.random() * 3,
-            height: 2 + Math.random() * 3,
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            background: i % 3 === 0 ? '#FFD700' : i % 3 === 1 ? '#FFA500' : '#FFFFFF',
-            opacity: 0.3 + Math.random() * 0.5,
-            '--dust-duration': `${3 + Math.random() * 4}s`,
-            '--dust-delay': `${Math.random() * 3}s`,
-          } as React.CSSProperties}
-        />
-      ))}
+      {Array.from({ length: 20 }).map((_, i) => {
+        const seed = (i * 31 + 17) % 100
+        return (
+          <div
+            key={i}
+            className="absolute rounded-full animate-dust"
+            style={{
+              width: 2 + (seed % 4),
+              height: 2 + (seed % 4),
+              left: `${(seed * 37) % 100}%`,
+              top: `${(seed * 61) % 100}%`,
+              background: i % 3 === 0 ? '#FFD700' : i % 3 === 1 ? '#FFA500' : '#FFFFFF',
+              opacity: 0.3 + (seed % 50) / 100,
+              '--dust-duration': `${3 + (seed % 4)}s`,
+              '--dust-delay': `${(seed % 30) / 10}s`,
+            } as React.CSSProperties}
+          />
+        )
+      })}
     </div>
   )
 }
@@ -97,7 +101,6 @@ export function ResultModal({ winners, players, onClose }: Props) {
   }
 
   const isSplit = winners.length > 1
-  const totalWon = winners.reduce((s, w) => s + w.amount, 0)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"

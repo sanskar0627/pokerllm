@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { useSocket } from '@/hooks/useSocket'
@@ -60,9 +60,12 @@ function FallingCards() {
   )
 }
 
+// Stable no-op subscription — lets useSyncExternalStore report "mounted"
+// without a setState-in-effect (server snapshot: false, client: true).
+const emptySubscribe = () => () => {}
+
 function GoldDust() {
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false)
 
   const particles = useMemo(() =>
     Array.from({ length: 14 }, (_, i) => {
@@ -174,6 +177,7 @@ export default function HomePage() {
   // Reset creating state on socket error (so button becomes clickable again)
   useEffect(() => {
     if (socketError && creating) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: re-enable the button after a socket error
       setCreating(false)
     }
   }, [socketError, creating])

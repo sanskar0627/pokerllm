@@ -36,27 +36,6 @@ function VerifyPageContent() {
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const verifyOnce = useRef(false)
 
-  // When user lands with ?token= (clicked email link) → verify immediately.
-  // Guard against React StrictMode double-invoke / re-renders so the one-time
-  // token is only consumed once.
-  useEffect(() => {
-    if (token && !verifyOnce.current) {
-      verifyOnce.current = true
-      verifyToken(token)
-    }
-  }, [token])
-
-  // When user lands with ?email= (just signed up, waiting) → poll for verification
-  useEffect(() => {
-    if (!token && email && status === 'pending') {
-      startPolling(email)
-    }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-      if (cooldownRef.current) clearInterval(cooldownRef.current)
-    }
-  }, [token, email, status])
-
   function startPolling(emailAddr: string) {
     pollRef.current = setInterval(async () => {
       try {
@@ -104,6 +83,28 @@ function VerifyPageContent() {
     setMessage('Email verified! Redirecting to login...')
     setTimeout(() => { window.location.href = '/login' }, 1500)
   }
+
+  // When user lands with ?token= (clicked email link) → verify immediately.
+  // Guard against React StrictMode double-invoke / re-renders so the one-time
+  // token is only consumed once.
+  useEffect(() => {
+    if (token && !verifyOnce.current) {
+      verifyOnce.current = true
+      verifyToken(token)
+    }
+  }, [token])
+
+  // When user lands with ?email= (just signed up, waiting) → poll for verification
+  useEffect(() => {
+    if (!token && email && status === 'pending') {
+      startPolling(email)
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+      if (cooldownRef.current) clearInterval(cooldownRef.current)
+    }
+  }, [token, email, status])
+
 
   async function handleResend() {
     if (!email || resending || resendCooldown > 0) return

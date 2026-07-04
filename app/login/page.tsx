@@ -73,6 +73,7 @@ export default function LoginPage() {
       AccessDenied: 'Access denied. Please try a different account.',
       Configuration: 'Sign-in is temporarily unavailable. Please try again later.',
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: one-time read of the NextAuth ?error= param
     setError(messages[err] ?? 'Sign-in failed. Please try again.')
     // Remove the error param so a refresh doesn't re-show it
     params.delete('error')

@@ -14,19 +14,21 @@ export function TurnTimer({ timer, isSelf, playerName }: Props) {
 
   // Local countdown: the server sends the initial event, we count down locally
   // to avoid needing per-second server ticks for AI turns.
-  const startRef = useRef(Date.now())
+  const startRef = useRef<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
 
   // Reset start time when a new timer begins (different player or fresh timer)
   useEffect(() => {
     startRef.current = Date.now() - (totalMs - timer.remainingMs)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: snap the countdown to the new timer immediately
     setElapsed(totalMs - timer.remainingMs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer.playerId, totalMs])
 
   // Tick every second for local countdown
   useEffect(() => {
     const interval = setInterval(() => {
-      setElapsed(Date.now() - startRef.current)
+      setElapsed(Date.now() - (startRef.current ?? Date.now()))
     }, 1000)
     return () => clearInterval(interval)
   }, [timer.playerId])
