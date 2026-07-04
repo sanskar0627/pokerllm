@@ -8,6 +8,7 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL!
   const adapter = new PrismaNeon({ connectionString })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma 7 driver-adapter ctor types lag behind the runtime API
   return new PrismaClient({ adapter } as any)
 }
 
