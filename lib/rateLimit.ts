@@ -62,8 +62,15 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
  * constant (all API-route requests share one bucket, which is still safe
  * for low-volume signup/login rate limits).
  */
+/** Behind Railway's edge (or any single trusted hop), X-Forwarded-For is set
+ *  by the proxy itself and can't be spoofed by clients. Railway always sets
+ *  RAILWAY_ENVIRONMENT, so we auto-trust the first hop there. */
+export function proxyIsTrusted(): boolean {
+  return process.env.TRUSTED_PROXY === '1' || Boolean(process.env.RAILWAY_ENVIRONMENT)
+}
+
 export function clientIpFrom(req: Request): string {
-  if (process.env.TRUSTED_PROXY === '1') {
+  if (proxyIsTrusted()) {
     const xff = req.headers.get('x-forwarded-for')
     if (xff) return xff.split(',')[0].trim()
     return req.headers.get('x-real-ip')?.trim() || 'unknown'

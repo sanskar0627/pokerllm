@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { AIModel } from '@/types/poker'
 import { AI_META_LIST } from '@/lib/aiMeta'
@@ -122,6 +122,22 @@ function ConfigPanel({
   const [busy, setBusy]               = useState<'save' | 'test' | 'model' | null>(null)
   const [msg, setMsg]                 = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
 
+  // Panel can be collapsed mid-request — never auto-seat or set state after unmount
+  const aliveRef = useRef(true)
+  useEffect(() => () => { aliveRef.current = false }, [])
+
+  // If the persisted config's model changes (e.g. a save just landed), adopt it
+  const [seenCfgModel, setSeenCfgModel] = useState(cfg?.model)
+  if (cfg?.model !== seenCfgModel) {
+    setSeenCfgModel(cfg?.model)
+    if (cfg?.model) {
+      const known = info.models.some(m => m.id === cfg.model)
+      setCustomRow(!known && info.models.length > 0 ? true : info.models.length === 0)
+      if (known) setModel(cfg.model)
+      else setCustomModel(cfg.model)
+    }
+  }
+
   const activeModel = customRow ? customModel.trim() : model
 
   async function api(path: string, init: RequestInit) {
@@ -153,6 +169,7 @@ function ConfigPanel({
   }
 
   function pickModel(m: string) {
+    if (busy) return  // no model changes while a save/test request is in flight
     setCustomRow(false)
     setModel(m)
     if (cfg) void saveModel(m)
@@ -187,6 +204,7 @@ function ConfigPanel({
     const t = await api('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ provider: id }) })
     setBusy(null)
     if (t.data.config) onSaved(t.data.config as unknown as ProviderConfigDTO)
+    if (!aliveRef.current) return // panel closed while testing — don't seat behind the user's back
     if (t.ok && t.data.ok) {
       setMsg({ text: `${String(t.data.message ?? 'Connected')} — seated at the table`, kind: 'ok' })
       onReady(id) // key verified → seat this AI automatically

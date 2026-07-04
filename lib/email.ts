@@ -57,7 +57,8 @@ async function sendViaBrevo(to: string, subject: string, html: string): Promise<
  */
 export async function sendVerificationEmail(email: string, token: string) {
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
-  const verifyUrl = `${baseUrl}/verify?token=${encodeURIComponent(token)}`
+  // Include the email so an expired/consumed token still lands on a page that can resend
+  const verifyUrl = `${baseUrl}/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`
   const year = new Date().getFullYear()
 
   const subject = 'Verify your PokerLLM account ♠'

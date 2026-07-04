@@ -55,7 +55,7 @@ export const ChatPanel = memo(function ChatPanel({ chatLog, onSend }: Props) {
     if (e.key === 'Escape' && isFocused) {
       setIsFocused(false)
       inputRef.current?.blur()
-      setInput('')
+      // keep the draft — Escape just exits focus
     }
   }, [isFocused])
 
@@ -79,7 +79,7 @@ export const ChatPanel = memo(function ChatPanel({ chatLog, onSend }: Props) {
     if (e.key === 'Escape') {
       setIsFocused(false)
       inputRef.current?.blur()
-      setInput('')
+      // keep the draft — Escape just exits focus
     }
   }
 

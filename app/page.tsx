@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { useSocket } from '@/hooks/useSocket'
@@ -166,6 +166,7 @@ export default function HomePage() {
   const [smallBlind, setSmallBlind] = useState(100)
   const [bigBlind, setBigBlind] = useState(200)
   const [creating, setCreating] = useState(false)
+  const creatingRef = useRef(false)
 
   // Navigate to game when created — hard redirect for reliability with socket.io
   useEffect(() => {
@@ -177,6 +178,7 @@ export default function HomePage() {
   // Reset creating state on socket error (so button becomes clickable again)
   useEffect(() => {
     if (socketError && creating) {
+      creatingRef.current = false
       // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: re-enable the button after a socket error
       setCreating(false)
     }
@@ -199,7 +201,8 @@ export default function HomePage() {
   const canStart = socket && selectedAIs.length >= minAIs && !creating
 
   function handleCreate() {
-    if (!canStart) return
+    if (!canStart || creatingRef.current) return
+    creatingRef.current = true  // synchronous guard — state update is async
     setCreating(true)
 
     // Use the authenticated user's name from session

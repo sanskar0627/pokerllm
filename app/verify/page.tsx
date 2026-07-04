@@ -530,6 +530,22 @@ function VerifyPageContent() {
                       {message}
                     </p>
 
+                    {/* Expired/consumed link but we know the address → one-click resend */}
+                    {email && (
+                      <button
+                        onClick={handleResend}
+                        disabled={resending || resendCooldown > 0}
+                        className="block mx-auto mb-4 px-6 py-3 rounded-xl font-game text-[13px] font-semibold
+                                   transition-all duration-200 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          color: '#1a0a2e',
+                          background: 'linear-gradient(135deg, #FFD700 0%, #D4A537 60%, #C49630 100%)',
+                        }}
+                      >
+                        {resending ? 'Sending…' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Send a new verification link'}
+                      </button>
+                    )}
+
                     <Link
                       href="/signup"
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-game text-[13px] font-semibold

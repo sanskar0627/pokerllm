@@ -29,12 +29,21 @@ function hashKey(key: string): string {
   return createHash('sha256').update(key).digest('hex').slice(0, 16)
 }
 const _clientCache = new Map<string, unknown>()
+const CLIENT_CACHE_MAX = 200   // ~one per active user+provider; evict oldest beyond this
+
+function cachePut(key: string, value: unknown): void {
+  if (_clientCache.size >= CLIENT_CACHE_MAX) {
+    const oldest = _clientCache.keys().next().value
+    if (oldest !== undefined) _clientCache.delete(oldest)
+  }
+  _clientCache.set(key, value)
+}
 
 async function getAnthropicClient(apiKey: string) {
   const cacheKey = `anthropic:${hashKey(apiKey)}`
   if (!_clientCache.has(cacheKey)) {
     const Anthropic = await getAnthropic()
-    _clientCache.set(cacheKey, new Anthropic({ apiKey }))
+    cachePut(cacheKey, new Anthropic({ apiKey }))
   }
   return _clientCache.get(cacheKey) as InstanceType<Awaited<ReturnType<typeof getAnthropic>>>
 }
@@ -43,7 +52,7 @@ async function getOpenAIClient(apiKey: string, baseURL?: string) {
   const cacheKey = `openai:${hashKey(apiKey)}:${baseURL ?? ''}`
   if (!_clientCache.has(cacheKey)) {
     const OpenAI = await getOpenAI()
-    _clientCache.set(cacheKey, new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) }))
+    cachePut(cacheKey, new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) }))
   }
   return _clientCache.get(cacheKey) as InstanceType<Awaited<ReturnType<typeof getOpenAI>>>
 }
@@ -52,7 +61,7 @@ async function getGoogleAIClient(apiKey: string) {
   const cacheKey = `google:${hashKey(apiKey)}`
   if (!_clientCache.has(cacheKey)) {
     const GoogleGenerativeAI = await getGoogleAI()
-    _clientCache.set(cacheKey, new GoogleGenerativeAI(apiKey))
+    cachePut(cacheKey, new GoogleGenerativeAI(apiKey))
   }
   return _clientCache.get(cacheKey) as InstanceType<Awaited<ReturnType<typeof getGoogleAI>>>
 }

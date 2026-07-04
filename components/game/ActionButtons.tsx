@@ -79,6 +79,7 @@ function useHoldRepeat(callback: () => void, initialDelay = 400, repeatInterval 
     onMouseLeave: stop,
     onTouchStart: (e: React.TouchEvent) => { e.preventDefault(); start() },
     onTouchEnd: stop,
+    onTouchCancel: stop,
   }
 }
 

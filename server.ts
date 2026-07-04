@@ -17,6 +17,7 @@ import { promoteGameLearnings } from '@/lib/permanentMemory'
 import { getSocketSession } from '@/lib/socketAuth'
 import { resolveProviderRuntime } from '@/lib/aiProviders/service'
 import { cleanupUnverifiedUsers } from '@/lib/cleanup'
+import { proxyIsTrusted } from '@/lib/rateLimit'
 import { prisma } from '@/lib/db'
 
 import type {
@@ -763,7 +764,7 @@ app.prepare().then(async () => {
     // Use the direct TCP connection address — x-forwarded-for is trivially
     // spoofable unless a trusted reverse proxy strips and re-sets it.
     // When behind a proxy, set TRUSTED_PROXY=1 to read the header.
-    const clientIp = process.env.TRUSTED_PROXY === '1'
+    const clientIp = proxyIsTrusted()
       ? ((socket.handshake.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ?? socket.handshake.address)
       : socket.handshake.address
 
