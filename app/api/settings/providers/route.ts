@@ -90,7 +90,7 @@ export async function PUT(req: NextRequest) {
     if (err instanceof ServiceError) {
       return NextResponse.json({ error: err.message }, { status: err.status })
     }
-    console.error('[api/settings/providers] upsert failed:', err instanceof Error ? err.message : err)
+    console.error('[api/settings/providers] upsert failed:', err instanceof Error ? err.stack || err.message : err)
     return NextResponse.json({ error: 'Could not save provider settings' }, { status: 500 })
   }
 }
