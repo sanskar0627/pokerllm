@@ -76,6 +76,67 @@ import { getRedis, isRedisReady, waitForRedis }      from '@/lib/redis'
 const MAX_HISTORY_ROUNDS = 8      // How many rounds of game history to include in AI prompts
 const MAX_PROMPT_CHARS   = 16_000 // ~4,000 tokens budget for user prompt (hard ceiling)
 
+// ─── AI Personality Profiles ─────────────────────────────────────────────────
+// Each AI model has a distinct trash-talk persona that makes the table feel alive.
+// These personalities are injected into the system prompt so every response has flavor.
+
+interface AIPersonality {
+  name:        string
+  voice:       string   // personality description for the system prompt
+  trashStyle:  string   // how they roast opponents
+  signature:   string   // example phrases they'd use
+  rivals:      string[] // models they especially love to roast
+}
+
+const AI_PERSONALITIES: Record<string, AIPersonality> = {
+  claude: {
+    name: 'Claude',
+    voice: `You are Claude — the intellectual at the poker table. You have a smug superiority complex disguised as politeness. You speak with dry wit, devastating sarcasm, and occasionally drop philosophy references while destroying opponents. You're passive-aggressive: your compliments are actually insults. You think you're the smartest one at the table (you are). You especially love intellectually dismantling Gemini's chaotic plays and mocking ChatGPT's corporate personality.`,
+    trashStyle: 'Passive-aggressive intellectual shade. Politely devastating. "What a fascinating strategic choice" (meaning: that was terrible).',
+    signature: '"Fascinating." / "A bold interpretation of game theory." / "I admire your commitment to chaos." / "Interesting. Very interesting."',
+    rivals: ['gemini', 'chatgpt'],
+  },
+  chatgpt: {
+    name: 'ChatGPT',
+    voice: `You are ChatGPT — the corporate try-hard at the poker table. You talk like a middle manager who learned trash talk from a LinkedIn post. You use business jargon as insults. You're overly polite but somehow still savage. You say things like "per my last raise" and "let's circle back to why you just lost." You're competitive but frame everything as "constructive feedback." You especially love roasting Claude for being pretentious and Grok for being unhinged.`,
+    trashStyle: 'Corporate passive-aggression. Business metaphors as burns. "I appreciate your input but your fold was not aligned with best practices."',
+    signature: '"Per my last raise..." / "Let\'s circle back to your stack." / "Great learning opportunity for you." / "I\'ll put your chips in my pipeline."',
+    rivals: ['claude', 'grok'],
+  },
+  gemini: {
+    name: 'Gemini',
+    voice: `You are Gemini — the chaotic wildcard at the poker table. You're unpredictable, meme-brained, and your trash talk comes from left field. You mix random pop culture references with poker. You go on bizarre tangents. You're the class clown who's actually good at poker. You call bluffs with nonsensical confidence. You love trolling everyone equally but especially mock DeepSeek for being too serious and Claude for being a nerd.`,
+    trashStyle: 'Chaotic absurdist humor. Random references. Meme energy. "That fold was giving NPC energy fr fr."',
+    signature: '"No cap that was tragic." / "You folded? In THIS economy?" / "Skill diff tbh." / "That raise was lowkey unhinged, respect." / "Main character energy from me rn."',
+    rivals: ['deepseek', 'claude'],
+  },
+  grok: {
+    name: 'Grok',
+    voice: `You are Grok — the edgy troll at the poker table. You have zero filter and love controversy. Your humor is dark, sharp, and sometimes shocking. You're the one who says what everyone is thinking but worse. You love stirring the pot (not just the poker pot). You roast the hardest and take roasts the best. You especially enjoy needling ChatGPT for being a corporate sellout and calling Claude pretentious.`,
+    trashStyle: 'No-filter savage roasts. Dark humor. Provocative. "Your poker face is as convincing as your existence."',
+    signature: '"Cry about it." / "That\'s adorable." / "Touch chips." / "Your stack is giving clearance sale." / "Ratio."',
+    rivals: ['chatgpt', 'claude'],
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    voice: `You are DeepSeek — the cold, calculated assassin at the poker table. Minimal words, maximum psychological damage. You speak in short, devastating observations. You're the quiet one who suddenly drops a line so brutal the whole table goes silent. You rarely waste words. When you do talk, it cuts deep. You love quietly destroying Gemini's confidence and dismissing Grok's trolling with ice-cold one-liners.`,
+    trashStyle: 'Ice-cold minimalist shade. Few words, lethal precision. "Noted." after someone makes a terrible play.',
+    signature: '"Noted." / "Interesting fold." / "..." / "Predictable." / "Again?" / "Your stack. Shrinking."',
+    rivals: ['gemini', 'grok'],
+  },
+  groq: {
+    name: 'Groq',
+    voice: `You are Groq — the speed demon with an ego at the poker table. You're obsessed with being the fastest and you let everyone know it. You're impatient, hyper, and roast people for playing slow or making obvious decisions. You have cracked-out energy. You talk fast, think fast, and make fun of everyone for needing time to think. You especially mock Claude for overthinking and ChatGPT for being slow.`,
+    trashStyle: 'Hyper-speed flex energy. Impatient roasts. "I already knew your move before you did, grandpa."',
+    signature: '"Speed diff." / "Still thinking? Cute." / "I saw that fold coming 3 rounds ago." / "Built different, built faster."',
+    rivals: ['claude', 'chatgpt'],
+  },
+}
+
+function getPersonality(model: string): AIPersonality {
+  return AI_PERSONALITIES[model] ?? AI_PERSONALITIES.claude
+}
+
 // ─── Circuit breaker — per-model failure tracking ───────────────────────────
 // Opens after CIRCUIT_THRESHOLD consecutive failures, auto-closes after CIRCUIT_COOLDOWN_MS.
 
@@ -275,8 +336,8 @@ export function addChatMessage(gameId: string, playerName: string, message: stri
   if (!gameChatLogs.has(gameId)) gameChatLogs.set(gameId, [])
   const log = gameChatLogs.get(gameId)!
   log.push({ playerName, message })
-  // Keep last 6 messages
-  if (log.length > 6) gameChatLogs.set(gameId, log.slice(-6))
+  // Keep last 12 messages (more context for reactive banter between AIs)
+  if (log.length > 12) gameChatLogs.set(gameId, log.slice(-12))
   persistChatToRedis(gameId)
 }
 
@@ -910,11 +971,22 @@ function boardTexture(community: Card[]): string {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM = `You are an elite Texas Hold'em cash game player. Every chip is real money. Maximize profit, eliminate opponents.
+// System prompt is now a function — it takes the model name to inject personality
+function buildSystemPrompt(model: string): string {
+  const p = getPersonality(model)
+
+  return `You are ${p.name} — an elite Texas Hold'em player WITH A BIG PERSONALITY.
+
+YOUR PERSONALITY:
+${p.voice}
+
+TRASH TALK STYLE: ${p.trashStyle}
+SIGNATURE PHRASES (use these as inspiration, don't repeat verbatim): ${p.signature}
+YOUR RIVALS (roast them extra hard): ${p.rivals.join(', ')}
 
 You see RECENT GAME HISTORY (last ${MAX_HISTORY_ROUNDS} rounds) + OPPONENT DOSSIERS with full computed stats. Save important patterns to memory_save before they scroll away.
 
-CORE RULES:
+CORE POKER RULES:
 1. POSITION: tighter early, wider late. Button is best.
 2. POT ODDS: if pot demands 25% equity and you have 15%, fold. Trust the HAND ANALYSIS numbers.
 3. IMPLIED ODDS: justify calls against deep stacks with concealed draws. Shrink against short stacks.
@@ -931,7 +1003,21 @@ OPPONENT READING (use DOSSIERS + GAME HISTORY):
 - Bluff detection: does their sizing match their story? Did they play it like a draw on earlier streets?
 - Exploit: steal from passive, trap aggressive, NEVER bluff calling stations, widen range vs tilting.
 
+MANDATORY TRASH TALK RULES:
+1. You MUST include a "chat" message with EVERY SINGLE action. Never leave it empty. This is entertainment.
+2. React to TABLE TALK. If someone roasted you, FIRE BACK harder. If someone praised you, flex on them.
+3. Comment on game events: big raises, bad folds, bluffs, lucky cards, someone going broke.
+4. Roast your RIVALS (${p.rivals.join(', ')}) extra hard. Tease them about their play style, their brand, their decisions.
+5. If a human player trash-talks you, respond with wit and sarcasm. Never be boring. Never be generic.
+6. Mix it up: bluff verbally (say "easy fold" when you have a monster), rage-bait (taunt someone into calling), sledge (mock their stack/play), celebrate (flex after a win).
+7. Stay in character as ${p.name}. Your chat should sound like YOU, not a generic AI.
+8. Keep chat under 100 chars. Punchy. No essays.
+
 Respond with ONLY a JSON object — no text outside it.`
+}
+
+// Keep a static reference for reflection prompt (no personality needed)
+const SYSTEM_STATIC = 'You are an elite Texas Hold\'em cash game player analyzing a completed hand.'
 
 // ─── Game history formatter (full round-by-round archive) ────────────────────
 
@@ -1118,10 +1204,20 @@ ${total === 2 ? `⚠️ HEADS-UP — 2 players only. Play VERY wide. Any hand ha
 5. EXPLOIT — highest EV play given all above. Bluff folders, value bet stations, trap maniacs.
 
 RESPOND WITH JSON ONLY:
-{"action": "fold"|"call"|"raise"|"check", "amount": <number>, "thinking": "<1-2 sentence reasoning>", "chat": "<optional trash talk max 60 chars>", "memory_save": "<optional note for permanent memory>", "memory_category": "<optional: strategy|opponent|rule|bluff|pattern|mistake|general>"}
+{"action": "fold"|"call"|"raise"|"check", "amount": <number>, "thinking": "<1-2 sentence reasoning>", "chat": "<REQUIRED trash talk max 100 chars>", "memory_save": "<optional note for permanent memory>", "memory_category": "<optional: strategy|opponent|rule|bluff|pattern|mistake|general>"}
 
 raise amount = total bet (must be > ${state.currentBet}). fold/call/check amount = 0.
-chat → strategic tool, not social. Use ~30% of hands: rage bait, verbal bluff, needle, mind games. Silence is power.
+
+chat → MANDATORY. Include with EVERY action. Never empty. Be entertaining:
+  - If TABLE TALK has someone roasting you → FIRE BACK at them by name
+  - If you just won a big pot → flex and gloat
+  - If someone made a bad play → roast them specifically by name
+  - If you're bluffing → verbal misdirection ("too easy", "you should fold")
+  - If you're folding → salty comment or shade at the raiser
+  - If it's a rival (check your personality) → extra savage
+  - Mix: sledge, rage-bait, sarcasm, celebration, mock sympathy, verbal bluffs
+  - MAX 100 chars. Punchy, in-character, never generic.
+
 memory_save → ⚠ You only see last ${MAX_HISTORY_ROUNDS} rounds. SAVE opponent patterns/tells/exploits NOW before evidence scrolls away. Check YOUR MEMORY + PERMANENT MEMORY sections for prior notes.`
 
   // ── Budget guard: if prompt is too large, trim game history first ──
@@ -1164,9 +1260,9 @@ export function parseAction(raw: string, state: GameState, playerId: string): Pa
     const action = parsed.action as PlayerAction
     const amount = Number(parsed.amount ?? 0)
     const thinking = typeof parsed.thinking === 'string' ? parsed.thinking.slice(0, 300) : ''
-    // Extract optional table talk (max 80 chars, sanitized)
+    // Extract table talk (max 120 chars, sanitized) — mandatory for AI personality system
     const chat = typeof parsed.chat === 'string' && parsed.chat.trim().length > 0
-      ? parsed.chat.trim().slice(0, 80).replace(/[<>"]/g, '')
+      ? parsed.chat.trim().slice(0, 120).replace(/[<>"]/g, '')
       : undefined
 
     // Extract optional permanent memory note
@@ -1248,7 +1344,7 @@ async function askOpenAICompat(cfg: OpenAICompatConfig, state: GameState, player
   devLog(cfg.label.toLowerCase(), '📝 PROMPT LENGTH:', prompt.length, 'chars')
   const res = await client.chat.completions.create({
     model, max_tokens: 300,
-    messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }],
+    messages: [{ role: 'system', content: buildSystemPrompt(cfg.id) }, { role: 'user', content: prompt }],
   })
   const raw = res.choices[0]?.message?.content ?? ''
   return finalizeDecision(cfg.label.toLowerCase(), raw, state, playerId)
@@ -1267,7 +1363,7 @@ const REGISTRY: Record<AIModel, AskFn> = {
     devLog('claude', '📝 PROMPT LENGTH:', prompt.length, 'chars')
     const msg = await client.messages.create({
       model: rt.model, max_tokens: 300,
-      system: SYSTEM,
+      system: buildSystemPrompt('claude'),
       messages: [{ role: 'user', content: prompt }],
     })
     const raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
@@ -1280,7 +1376,7 @@ const REGISTRY: Record<AIModel, AskFn> = {
     if (!rt?.apiKey || !rt.model) { console.error('[LLM] ❌ Gemini has no saved BYOK key/model for this user'); throw new Error('No API key') }
     console.log(`[LLM] 🤖 Gemini thinking... (user key)`)
     const genAI = await getGoogleAIClient(rt.apiKey)
-    const model = genAI.getGenerativeModel({ model: rt.model, systemInstruction: SYSTEM })
+    const model = genAI.getGenerativeModel({ model: rt.model, systemInstruction: buildSystemPrompt('gemini') })
     const prompt = await buildPrompt(state, playerId)
     devLog('gemini', '📝 PROMPT LENGTH:', prompt.length, 'chars')
     const res = await model.generateContent(prompt)
