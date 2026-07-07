@@ -515,6 +515,21 @@ interface Props {
 export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
   const [configs, setConfigs] = useState<Map<string, ProviderConfigDTO>>(new Map())
   const [expanded, setExpanded] = useState<AIModel | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Click outside any expanded card → collapse it
+  useEffect(() => {
+    if (!expanded) return
+    function handleClick(e: MouseEvent) {
+      // Find the expanded card's DOM node
+      const expandedCard = containerRef.current?.querySelector(`[data-ai-card="${expanded}"]`)
+      if (expandedCard && !expandedCard.contains(e.target as Node)) {
+        setExpanded(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [expanded])
 
   // Load saved provider configs once — never blocks the lobby.
   useEffect(() => {
@@ -546,16 +561,15 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
 
   function toggle(id: AIModel) {
     if (selected.includes(id)) {
+      // Deselect — collapse if this card was expanded
       onChange(selected.filter(m => m !== id))
       if (expanded === id) setExpanded(null)
-    } else {
-      // No saved key → open the config panel instead of seating.
-      if (!isReady(id)) {
-        setExpanded(id)
-        return
-      }
-      onChange([...selected, id])
+    } else if (!isReady(id)) {
+      // Not configured yet → expand the config panel (don't seat)
       setExpanded(id)
+    } else {
+      // Ready (key + model saved) → just seat, no expand
+      onChange([...selected, id])
     }
   }
 
@@ -568,7 +582,7 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
         <span className="font-pixel text-[8px] text-white/40">{selected.length} selected</span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div ref={containerRef} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {AI_META_LIST.map(m => {
           const active = selected.includes(m.id)
           const isOpen = expanded === m.id
@@ -580,6 +594,7 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
           return (
             <motion.div
               key={m.id}
+              data-ai-card={m.id}
               layout
               transition={{ layout: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] } }}
               className={`relative rounded-xl border overflow-hidden transition-colors duration-200
