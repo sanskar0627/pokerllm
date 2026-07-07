@@ -8,7 +8,8 @@
     "start": "NODE_ENV=production bun server.ts",
     "lint": "eslint .",
     "test": "echo 'No test runner configured yet' && exit 0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

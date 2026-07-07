@@ -72,7 +72,7 @@ export async function saveAINote(
         select: { id: true },
       })
       await prisma.aiNote.deleteMany({
-        where: { id: { in: oldest.map(n => n.id) } },
+        where: { id: { in: oldest.map((n: { id: string }) => n.id) } },
       })
     }
 
@@ -200,7 +200,7 @@ export async function promoteGameLearnings(
         select: { id: true },
       })
       await prisma.aiGlobalInsight.deleteMany({
-        where: { id: { in: oldest.map(o => o.id) } },
+        where: { id: { in: oldest.map((o: { id: string }) => o.id) } },
       })
     }
 

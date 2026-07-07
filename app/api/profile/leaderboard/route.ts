@@ -23,19 +23,19 @@ export async function GET() {
     where: { result: 'win' },
     _count: { id: true },
   })
-  const winMap = new Map(winCounts.map(w => [w.userId, w._count.id]))
+  const winMap = new Map(winCounts.map((w: { userId: string; _count: { id: number } }) => [w.userId, w._count.id]))
 
   // Fetch user info only for the users who have games (max ~50)
-  const userIds = stats.map(s => s.userId)
+  const userIds = stats.map((s: { userId: string }) => s.userId)
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
     select: { id: true, name: true, image: true },
   })
-  const userMap = new Map(users.map(u => [u.id, u]))
+  const userMap = new Map(users.map((u: { id: string; name: string | null; image: string | null }) => [u.id, u]))
 
   // Build leaderboard entries
   const leaderboard = stats
-    .map(s => {
+    .map((s: { userId: string; _count: { id: number }; _sum: { rounds: number | null } }) => {
       const user = userMap.get(s.userId)
       const total = s._count.id
       const wins = winMap.get(s.userId) ?? 0
@@ -51,7 +51,7 @@ export async function GET() {
         totalRounds: s._sum.rounds ?? 0,
       }
     })
-    .sort((a, b) => {
+    .sort((a: { wins: number; winRate: number; totalGames: number }, b: { wins: number; winRate: number; totalGames: number }) => {
       if (b.wins !== a.wins) return b.wins - a.wins
       if (b.winRate !== a.winRate) return b.winRate - a.winRate
       return b.totalGames - a.totalGames

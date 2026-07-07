@@ -28,9 +28,9 @@ export async function GET() {
 
   // Compute stats
   const totalGames = gameRecords.length
-  const wins = gameRecords.filter(g => g.result === 'win').length
-  const losses = gameRecords.filter(g => g.result === 'loss').length
-  const abandoned = gameRecords.filter(g => g.result === 'abandoned').length
+  const wins = gameRecords.filter((g: { result: string }) => g.result === 'win').length
+  const losses = gameRecords.filter((g: { result: string }) => g.result === 'loss').length
+  const abandoned = gameRecords.filter((g: { result: string }) => g.result === 'abandoned').length
   const winRate = totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0
 
   // Count games per AI model
@@ -67,7 +67,7 @@ export async function GET() {
   }
 
   // Total rounds played
-  const totalRounds = gameRecords.reduce((sum, g) => sum + g.rounds, 0)
+  const totalRounds = gameRecords.reduce((sum: number, g: { rounds: number }) => sum + g.rounds, 0)
 
   return NextResponse.json({
     user,
@@ -84,7 +84,7 @@ export async function GET() {
       aiModelCounts,
     },
     aiProfiles,
-    gameRecords: gameRecords.map(g => ({
+    gameRecords: gameRecords.map((g: { id: string; gameId: string; models: string[]; rounds: number; result: string; createdAt: Date }) => ({
       id: g.id,
       gameId: g.gameId,
       models: g.models,
