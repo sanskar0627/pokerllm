@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rateLimit'
-import { isProviderId, PROVIDERS } from '@/lib/aiProviders/catalog'
-import { listConfigs, upsertConfig, ServiceError } from '@/lib/aiProviders/service'
+import { isProviderId, PROVIDERS, OPENROUTER_BASE_URL } from '@/lib/aiProviders/catalog'
+import { listConfigs, upsertConfig, setActiveCustom, ServiceError } from '@/lib/aiProviders/service'
 import { sanitizeBaseUrl } from '@/lib/aiProviders/validate'
 import { sameOrigin } from '@/lib/apiSecurity'
 
@@ -47,6 +47,32 @@ export async function PUT(req: NextRequest) {
   }
   const info = PROVIDERS[b.provider]
 
+  // Custom endpoints live in slots 0..9; everything else is slot 0
+  let slot = 0
+  if (info.id === 'custom' && b.slot !== undefined) {
+    slot = Number(b.slot)
+    if (!Number.isInteger(slot) || slot < 0 || slot > 9) {
+      return NextResponse.json({ error: 'Invalid slot (0-9)' }, { status: 400 })
+    }
+  }
+
+  // Activation-only request: flip the active custom endpoint, change nothing else
+  if (info.id === 'custom' && b.activateOnly === true) {
+    try {
+      const config = await setActiveCustom(session.user.id, slot)
+      return NextResponse.json({ config })
+    } catch (err) {
+      if (err instanceof ServiceError) return NextResponse.json({ error: err.message }, { status: err.status })
+      throw err
+    }
+  }
+
+  // Key routing: the provider's official API, or OpenRouter
+  const via: 'official' | 'openrouter' = b.via === 'openrouter' ? 'openrouter' : 'official'
+  if (via === 'openrouter' && (info.id === 'custom' || info.id === 'openrouter' || info.id === 'ollama')) {
+    return NextResponse.json({ error: 'OpenRouter routing is not applicable to this provider' }, { status: 400 })
+  }
+
   const model = typeof b.model === 'string' ? b.model.trim() : ''
   if (!model || model.length > 120 || /[\s<>"'`]/.test(model)) {
     return NextResponse.json({ error: 'Model id is required (no spaces or quotes, max 120 chars)' }, { status: 400 })
@@ -62,7 +88,10 @@ export async function PUT(req: NextRequest) {
   }
 
   let baseUrl: string | null = null
-  if (typeof b.baseUrl === 'string' && b.baseUrl.trim()) {
+  if (via === 'openrouter') {
+    // Routed through OpenRouter regardless of the provider's own endpoint
+    baseUrl = OPENROUTER_BASE_URL
+  } else if (typeof b.baseUrl === 'string' && b.baseUrl.trim()) {
     if (!info.allowsBaseUrl) {
       return NextResponse.json({ error: `${info.label} does not accept a custom base URL` }, { status: 400 })
     }
@@ -84,7 +113,12 @@ export async function PUT(req: NextRequest) {
   if (!apiKey && !info.requiresKey) apiKey = 'ollama-local'
 
   try {
-    const dto = await upsertConfig(session.user.id, { provider: info.id, apiKey, model, baseUrl, customName })
+    const dto = await upsertConfig(session.user.id, { provider: info.id, slot, via, apiKey, model, baseUrl, customName })
+    // Saving a custom endpoint with makeActive activates it exclusively
+    if (info.id === 'custom' && b.makeActive === true) {
+      const activated = await setActiveCustom(session.user.id, slot)
+      return NextResponse.json({ config: activated })
+    }
     return NextResponse.json({ config: dto })
   } catch (err) {
     if (err instanceof ServiceError) {

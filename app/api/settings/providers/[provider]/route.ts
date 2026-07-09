@@ -23,9 +23,14 @@ export async function DELETE(
   if (!isProviderId(provider)) {
     return NextResponse.json({ error: 'Unknown provider' }, { status: 400 })
   }
+  const slotParam = req.nextUrl.searchParams.get('slot')
+  const slot = slotParam ? Number(slotParam) : 0
+  if (!Number.isInteger(slot) || slot < 0 || slot > 9) {
+    return NextResponse.json({ error: 'Invalid slot' }, { status: 400 })
+  }
 
   try {
-    await deleteConfig(session.user.id, provider)
+    await deleteConfig(session.user.id, provider, slot)
     return NextResponse.json({ ok: true })
   } catch (err) {
     if (err instanceof ServiceError) {

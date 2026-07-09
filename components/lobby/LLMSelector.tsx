@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { AIModel } from '@/types/poker'
 import { AI_META_LIST } from '@/lib/aiMeta'
-import { PROVIDERS, type ProviderId, type ProviderConfigDTO } from '@/lib/aiProviders/catalog'
+import { PROVIDERS, OPENROUTER_KEYS_URL, type ProviderId, type ProviderConfigDTO, type KeyVia } from '@/lib/aiProviders/catalog'
 
 /* ─────────────────────────────────────────────────────────────────────────────
    AI player selector with INLINE provider configuration.
@@ -101,20 +101,31 @@ const STATUS_DOT: Record<KeyStatus, string> = {
 // ─── Inline config panel (slides open under a selected card) ─────────────────
 
 function ConfigPanel({
-  id, cfg, onSaved, onReady,
+  id, cfg, customConfigs = [], onSaved, onReady, onDeleted,
 }: {
   id:      AIModel
   cfg?:    ProviderConfigDTO
+  customConfigs?: ProviderConfigDTO[]          // all saved custom endpoints (custom card only)
   onSaved: (c: ProviderConfigDTO) => void
   onReady: (id: AIModel) => void
+  onDeleted?: (slot: number) => void
 }) {
   const info = PROVIDERS[id as ProviderId]
-  const knownModel = cfg && info.models.some(m => m.id === cfg.model)
+  const canUseOpenRouter = info.playable && !info.isCustom && info.id !== 'openrouter' && info.id !== 'ollama'
+  const knownModel = cfg && info.models.some(m => m.id === cfg.model || m.orId === cfg.model)
 
+  const [via, setVia]                 = useState<KeyVia>(cfg?.via ?? 'official')
+  const [slot, setSlot]               = useState(cfg?.slot ?? 0)   // custom endpoints: which slot the form edits
   const [apiKey, setApiKey]           = useState('')
   const [showKey, setShowKey]         = useState(false)
   const [keyFocused, setKeyFocused]   = useState(false)
-  const [model, setModel]             = useState(knownModel ? cfg!.model : (info.models[0]?.id ?? ''))
+  const [model, setModel]             = useState(() => {
+    if (cfg) {
+      const row = info.models.find(m => m.id === cfg.model || m.orId === cfg.model)
+      if (row) return row.id
+    }
+    return info.models[0]?.id ?? ''
+  })
   const [customModel, setCustomModel] = useState(cfg && !knownModel ? cfg.model : '')
   const [customRow, setCustomRow]     = useState(Boolean(cfg && !knownModel) || info.models.length === 0)
   const [baseUrl, setBaseUrl]         = useState(cfg?.baseUrl ?? info.baseUrl ?? '')
@@ -131,14 +142,20 @@ function ConfigPanel({
   if (cfg?.model !== seenCfgModel) {
     setSeenCfgModel(cfg?.model)
     if (cfg?.model) {
-      const known = info.models.some(m => m.id === cfg.model)
-      setCustomRow(!known && info.models.length > 0 ? true : info.models.length === 0)
-      if (known) setModel(cfg.model)
+      const row = info.models.find(m => m.id === cfg.model || m.orId === cfg.model)
+      setCustomRow(!row && info.models.length > 0 ? true : info.models.length === 0)
+      if (row) setModel(row.id)
       else setCustomModel(cfg.model)
     }
   }
 
-  const activeModel = customRow ? customModel.trim() : model
+  /** Map the UI-selected model row to the id we persist for the current route. */
+  const wireModelId = (rowId: string): string => {
+    if (via !== 'openrouter') return rowId
+    const row = info.models.find(m => m.id === rowId)
+    return row?.orId ?? rowId
+  }
+  const activeModel = customRow ? customModel.trim() : wireModelId(model)
 
   async function api(path: string, init: RequestInit) {
     const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init })
@@ -153,7 +170,7 @@ function ConfigPanel({
     const { ok, data } = await api('/api/settings/providers', {
       method: 'PUT',
       body: JSON.stringify({
-        provider: id, model: nextModel,
+        provider: id, model: nextModel, via, slot,
         baseUrl: info.allowsBaseUrl ? (baseUrl.trim() || undefined) : undefined,
         customName: info.isCustom ? (customName.trim() || undefined) : undefined,
       }),
@@ -172,7 +189,7 @@ function ConfigPanel({
     if (busy) return  // no model changes while a save/test request is in flight
     setCustomRow(false)
     setModel(m)
-    if (cfg) void saveModel(m)
+    if (cfg) void saveModel(wireModelId(m))
   }
 
   /** Save key (+ everything else), then auto-test the connection. */
@@ -185,11 +202,13 @@ function ConfigPanel({
     const { ok, data } = await api('/api/settings/providers', {
       method: 'PUT',
       body: JSON.stringify({
-        provider: id,
+        provider: id, via, slot,
         apiKey: apiKey.trim() || undefined,
         model: activeModel,
         baseUrl: info.allowsBaseUrl ? (baseUrl.trim() || undefined) : undefined,
         customName: info.isCustom ? (customName.trim() || undefined) : undefined,
+        // saving a custom endpoint makes it the active one
+        makeActive: info.isCustom || undefined,
       }),
     })
     if (!ok) {
@@ -201,7 +220,7 @@ function ConfigPanel({
 
     // Auto-test right after saving a key — one less click.
     setBusy('test')
-    const t = await api('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ provider: id }) })
+    const t = await api('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ provider: id, slot }) })
     setBusy(null)
     if (t.data.config) onSaved(t.data.config as unknown as ProviderConfigDTO)
     if (!aliveRef.current) return // panel closed while testing — don't seat behind the user's back
@@ -215,7 +234,7 @@ function ConfigPanel({
 
   async function testKey() {
     setBusy('test'); setMsg(null)
-    const { ok, data } = await api('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ provider: id }) })
+    const { ok, data } = await api('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ provider: id, slot }) })
     setBusy(null)
     if (data.config) onSaved(data.config as unknown as ProviderConfigDTO)
     setMsg(ok && data.ok
@@ -241,7 +260,7 @@ function ConfigPanel({
           <div className="flex items-center justify-between mb-3">
             <span className="font-pixel text-[7px] text-[#FFD700]/60 uppercase tracking-[2px] flex items-center gap-1.5">
               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              {info.isCustom ? 'Your Endpoint' : `${info.label} API Key`}
+              {info.isCustom ? 'Your Endpoint' : via === 'openrouter' ? 'OpenRouter Key' : `${info.label} API Key`}
             </span>
             {/* Status chip lives in the header — keeps the column balanced */}
             {status === 'valid' && (
@@ -266,7 +285,106 @@ function ConfigPanel({
             )}
           </div>
 
+          {/* Route toggle: provider's official API vs OpenRouter (one key for everything) */}
+          {canUseOpenRouter && (
+            <div className="relative flex rounded-lg p-0.5 mb-2.5 panel-inset w-fit">
+              {(['official', 'openrouter'] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => { if (!busy) { setVia(v); setMsg(null) } }}
+                  className={`relative px-3 py-1.5 rounded-md font-game text-[11px] font-semibold transition-all duration-200
+                    ${via === v ? 'text-[#1a0a2e]' : 'text-white/35 hover:text-white/60'}`}
+                >
+                  {via === v && (
+                    <motion.span
+                      layoutId={`via-${id}`}
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                      className="absolute inset-0 rounded-md"
+                      style={{ background: 'linear-gradient(135deg, #FFE27A 0%, #FFD700 45%, #C49630 100%)' }}
+                    />
+                  )}
+                  <span className="relative">{v === 'official' ? 'Official API' : 'OpenRouter'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-2.5">
+            {/* Saved custom endpoints — pick active, edit, or delete */}
+            {info.isCustom && customConfigs.length > 0 && (
+              <div className="panel-inset rounded-lg overflow-hidden mb-1">
+                {customConfigs.map((c, i) => (
+                  <div key={c.slot} className={`flex items-center gap-2.5 px-3 py-2 ${i > 0 ? 'border-t border-white/[0.05]' : ''} ${c.slot === slot ? 'bg-[#FFD700]/[0.05]' : ''}`}>
+                    {/* Active radio */}
+                    <button
+                      onClick={async () => {
+                        if (busy || c.isActive) return
+                        const { ok, data } = await api('/api/settings/providers', {
+                          method: 'PUT',
+                          body: JSON.stringify({ provider: 'custom', slot: c.slot, activateOnly: true }),
+                        })
+                        if (ok && data.config) onSaved(data.config as unknown as ProviderConfigDTO)
+                      }}
+                      title={c.isActive ? 'Active endpoint' : 'Make active'}
+                      className="shrink-0"
+                    >
+                      <span className={`block w-3.5 h-3.5 rounded-full border-2 transition-all
+                        ${c.isActive ? 'border-[#FFD700] bg-[#FFD700] shadow-[0_0_6px_rgba(255,215,0,0.5)]' : 'border-white/25 hover:border-[#FFD700]/50'}`} />
+                    </button>
+                    {/* Load into the form for editing */}
+                    <button
+                      onClick={() => {
+                        setSlot(c.slot)
+                        setCustomName(c.customName ?? '')
+                        setBaseUrl(c.baseUrl ?? '')
+                        setCustomModel(c.model)
+                        setCustomRow(true)
+                        setApiKey('')
+                        setMsg(null)
+                      }}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <span className="font-game text-[12px] font-semibold text-white/75 block truncate">
+                        {c.customName || `Endpoint ${c.slot + 1}`}
+                        {c.isActive && <span className="font-pixel text-[5px] text-[#FFD700]/70 border border-[#FFD700]/25 rounded px-1 py-0.5 ml-1.5 tracking-wider align-middle">ACTIVE</span>}
+                      </span>
+                      <span className="font-game text-[10px] text-white/30 block truncate">{c.model} · ••••{c.keyLast4}</span>
+                    </button>
+                    {/* Delete this endpoint */}
+                    <button
+                      onClick={async () => {
+                        if (busy) return
+                        const { ok } = await api(`/api/settings/providers/custom?slot=${c.slot}`, { method: 'DELETE' })
+                        if (ok) onDeleted?.(c.slot)
+                      }}
+                      className="shrink-0 text-white/20 hover:text-red-300/80 transition-colors"
+                      aria-label="Delete endpoint"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                    </button>
+                  </div>
+                ))}
+                {/* Add another endpoint */}
+                {customConfigs.length < 10 && (
+                  <button
+                    onClick={() => {
+                      const next = Math.max(...customConfigs.map(c => c.slot)) + 1
+                      setSlot(next)
+                      setCustomName('')
+                      setBaseUrl('')
+                      setCustomModel('')
+                      setCustomRow(true)
+                      setApiKey('')
+                      setMsg(null)
+                    }}
+                    className="w-full px-3 py-2 border-t border-white/[0.05] font-game text-[11px] font-semibold text-[#FFD700]/60 hover:text-[#FFD700]/90 hover:bg-white/[0.02] transition-colors text-left"
+                  >
+                    + Add another endpoint
+                  </button>
+                )}
+              </div>
+            )}
+
             {info.isCustom && (
               <input
                 type="text" value={customName} maxLength={40} spellCheck={false}
@@ -349,13 +467,13 @@ function ConfigPanel({
 
           {/* Footer: docs link + trust note — anchored to the bottom */}
           <div className="mt-auto pt-3.5 space-y-1.5">
-            {info.docsUrl && (
+            {(via === 'openrouter' || info.docsUrl) && (
               <a
-                href={info.docsUrl} target="_blank" rel="noopener noreferrer"
+                href={via === 'openrouter' ? OPENROUTER_KEYS_URL : info.docsUrl} target="_blank" rel="noopener noreferrer"
                 onClick={e => e.stopPropagation()}
                 className="group inline-flex items-center gap-1 font-game text-[10.5px] text-[#FFD700]/45 hover:text-[#FFD700]/80 transition-colors"
               >
-                Get a key from {info.company}
+                Get a key from {via === 'openrouter' ? 'OpenRouter' : info.company}
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
                      className="transition-transform duration-200 group-hover:translate-x-px group-hover:-translate-y-px">
                   <path d="M7 17 17 7" /><path d="M8 7h9v9" />
@@ -513,7 +631,8 @@ interface Props {
 }
 
 export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
-  const [configs, setConfigs] = useState<Map<string, ProviderConfigDTO>>(new Map())
+  // All saved configs (custom may occupy several slots)
+  const [configs, setConfigs] = useState<ProviderConfigDTO[]>([])
   const [expanded, setExpanded] = useState<AIModel | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -537,20 +656,40 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
     fetch('/api/settings/providers')
       .then(r => r.ok ? r.json() : { configs: [] })
       .then((data: { configs?: ProviderConfigDTO[] }) => {
-        if (!cancelled) setConfigs(new Map((data.configs ?? []).map(c => [c.provider, c])))
+        if (!cancelled) setConfigs(data.configs ?? [])
       })
       .catch(() => { /* lobby works without configs (house keys) */ })
     return () => { cancelled = true }
   }, [])
 
   const upsertConfig = (c: ProviderConfigDTO) =>
-    setConfigs(prev => new Map(prev).set(c.provider, c))
+    setConfigs(prev => {
+      const rest = prev.filter(x => !(x.provider === c.provider && x.slot === c.slot))
+      // an activated custom endpoint deactivates its siblings locally too
+      const adjusted = c.provider === 'custom' && c.isActive
+        ? rest.map(x => x.provider === 'custom' ? { ...x, isActive: false } : x)
+        : rest
+      return [...adjusted, c]
+    })
+
+  const removeCustomSlot = (slot: number) =>
+    setConfigs(prev => prev.filter(x => !(x.provider === 'custom' && x.slot === slot)))
+
+  const customCfgs = configs
+    .filter(c => c.provider === 'custom')
+    .sort((a, b) => a.slot - b.slot)
+
+  /** The config shown on a card: for custom, the ACTIVE endpoint. */
+  const cfgFor = (id: AIModel): ProviderConfigDTO | undefined =>
+    id === 'custom'
+      ? (customCfgs.find(c => c.isActive) ?? customCfgs[0])
+      : configs.find(c => c.provider === id)
 
   /** BYOK-only: a seat requires the user's saved key + model (and a working one). */
   const isReady = (id: AIModel) => {
-    const cfg = configs.get(id)
+    const cfg = cfgFor(id)
     if (!cfg || !cfg.model || cfg.status === 'invalid') return false
-    if (id === 'custom' && !cfg.baseUrl) return false
+    if (id === 'custom' && (!cfg.baseUrl || !cfg.isActive)) return false
     return true
   }
 
@@ -586,7 +725,7 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
         {AI_META_LIST.map(m => {
           const active = selected.includes(m.id)
           const isOpen = expanded === m.id
-          const cfg = configs.get(m.id)
+          const cfg = cfgFor(m.id)
           const status = keyStatus(cfg)
           const isCustom = m.id === 'custom'
           const displayName = isCustom && cfg?.customName ? cfg.customName : m.label
@@ -675,7 +814,14 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
                     transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
                     className="overflow-hidden"
                   >
-                    <ConfigPanel id={m.id} cfg={cfg} onSaved={upsertConfig} onReady={seatIfUnseated} />
+                    <ConfigPanel
+                      id={m.id}
+                      cfg={cfg}
+                      customConfigs={isCustom ? customCfgs : undefined}
+                      onSaved={upsertConfig}
+                      onReady={seatIfUnseated}
+                      onDeleted={isCustom ? removeCustomSlot : undefined}
+                    />
                   </motion.div>
                 )}
               </AnimatePresence>

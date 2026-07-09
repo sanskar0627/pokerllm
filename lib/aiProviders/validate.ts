@@ -80,6 +80,15 @@ export async function validateProviderKey(
   const endpoint = baseUrl ?? info.baseUrl
 
   try {
+    // A stored baseUrl (OpenRouter routing / custom endpoint) always speaks the
+    // OpenAI wire protocol — even for Claude/Gemini seats routed via OpenRouter.
+    if (baseUrl) {
+      const res = await timedFetch(`${baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      })
+      return res.ok ? { ok: true, message: 'Connected' } : classify(res.status)
+    }
+
     switch (info.wire) {
       case 'anthropic': {
         const res = await timedFetch('https://api.anthropic.com/v1/models?limit=1', {

@@ -30,19 +30,24 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
-  const provider = (body as Record<string, unknown>).provider
+  const bodyObj = body as Record<string, unknown>
+  const provider = bodyObj.provider
 
   if (!isProviderId(provider)) {
     return NextResponse.json({ error: 'Unknown provider' }, { status: 400 })
   }
+  const slot = provider === 'custom' && bodyObj.slot !== undefined ? Number(bodyObj.slot) : 0
+  if (!Number.isInteger(slot) || slot < 0 || slot > 9) {
+    return NextResponse.json({ error: 'Invalid slot' }, { status: 400 })
+  }
 
-  const creds = await getDecryptedKey(session.user.id, provider)
+  const creds = await getDecryptedKey(session.user.id, provider, slot)
   if (!creds) {
     return NextResponse.json({ error: 'Save this provider before testing' }, { status: 404 })
   }
 
   const result = await validateProviderKey(provider, creds.apiKey, creds.baseUrl)
-  const config = await setValidationResult(session.user.id, provider, result.ok, result.message)
+  const config = await setValidationResult(session.user.id, provider, result.ok, result.message, slot)
 
   return NextResponse.json({ ok: result.ok, message: result.message, config })
 }

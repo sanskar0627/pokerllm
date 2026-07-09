@@ -25,7 +25,14 @@ export interface ModelInfo {
   id:          string
   label:       string
   description: string
+  orId?:       string   // this model's id on OpenRouter (when routed via OpenRouter)
 }
+
+/** How a config's key routes: the provider's official API, or OpenRouter. */
+export type KeyVia = 'official' | 'openrouter'
+
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+export const OPENROUTER_KEYS_URL = 'https://openrouter.ai/keys'
 
 export interface ProviderInfo {
   id:            ProviderId
@@ -49,13 +56,13 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     accent: '#D97757', keyHint: 'sk-ant-...', docsUrl: 'https://console.anthropic.com/settings/keys',
     requiresKey: true, allowsBaseUrl: false, playable: true,
     models: [
-      { id: 'claude-fable-5',     label: 'Claude Fable 5',    description: 'Most intelligent Claude — new Mythos class' },
-      { id: 'claude-opus-4-8',    label: 'Claude Opus 4.8',   description: 'Top Opus — 1M context, deep agentic reasoning' },
-      { id: 'claude-sonnet-4-6',  label: 'Claude Sonnet 4.6', description: 'Latest Sonnet — the balanced pick' },
-      { id: 'claude-sonnet-4-5',  label: 'Claude Sonnet 4.5', description: 'Proven all-rounder' },
-      { id: 'claude-haiku-4-5',   label: 'Claude Haiku 4.5',  description: 'Fastest — great for quick games' },
-      { id: 'claude-opus-4-6',    label: 'Claude Opus 4.6',   description: 'Previous-gen Opus' },
-      { id: 'claude-opus-4-1',    label: 'Claude Opus 4.1',   description: 'Older Opus, still sharp' },
+      { id: 'claude-fable-5',     label: 'Claude Fable 5',    description: 'Most intelligent Claude — new Mythos class', orId: 'anthropic/claude-fable-5' },
+      { id: 'claude-opus-4-8',    label: 'Claude Opus 4.8',   description: 'Top Opus — 1M context, deep agentic reasoning', orId: 'anthropic/claude-opus-4.8' },
+      { id: 'claude-sonnet-4-6',  label: 'Claude Sonnet 4.6', description: 'Latest Sonnet — the balanced pick', orId: 'anthropic/claude-sonnet-4.6' },
+      { id: 'claude-sonnet-4-5',  label: 'Claude Sonnet 4.5', description: 'Proven all-rounder', orId: 'anthropic/claude-sonnet-4.5' },
+      { id: 'claude-haiku-4-5',   label: 'Claude Haiku 4.5',  description: 'Fastest — great for quick games', orId: 'anthropic/claude-haiku-4.5' },
+      { id: 'claude-opus-4-6',    label: 'Claude Opus 4.6',   description: 'Previous-gen Opus', orId: 'anthropic/claude-opus-4.6' },
+      { id: 'claude-opus-4-1',    label: 'Claude Opus 4.1',   description: 'Older Opus, still sharp', orId: 'anthropic/claude-opus-4.1' },
     ],
   },
   chatgpt: {
@@ -63,13 +70,13 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     accent: '#10A37F', keyHint: 'sk-...', docsUrl: 'https://platform.openai.com/api-keys',
     requiresKey: true, allowsBaseUrl: false, playable: true,
     models: [
-      { id: 'gpt-5.5',      label: 'GPT-5.5',      description: 'Newest frontier model' },
-      { id: 'gpt-5.4',      label: 'GPT-5.4',      description: 'Strong reasoning workhorse' },
-      { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini', description: 'Low latency, low cost' },
-      { id: 'gpt-5.4-nano', label: 'GPT-5.4 nano', description: 'Cheapest and fastest' },
-      { id: 'gpt-5.2',      label: 'GPT-5.2',      description: 'Stable previous release' },
-      { id: 'gpt-5',        label: 'GPT-5',        description: 'Original GPT-5 flagship' },
-      { id: 'gpt-5-mini',   label: 'GPT-5 mini',   description: 'Budget GPT-5 tier' },
+      { id: 'gpt-5.5',      label: 'GPT-5.5',      description: 'Newest frontier model', orId: 'openai/gpt-5.5' },
+      { id: 'gpt-5.4',      label: 'GPT-5.4',      description: 'Strong reasoning workhorse', orId: 'openai/gpt-5.4' },
+      { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini', description: 'Low latency, low cost', orId: 'openai/gpt-5.4-mini' },
+      { id: 'gpt-5.4-nano', label: 'GPT-5.4 nano', description: 'Cheapest and fastest', orId: 'openai/gpt-5.4-nano' },
+      { id: 'gpt-5.2',      label: 'GPT-5.2',      description: 'Stable previous release', orId: 'openai/gpt-5.2' },
+      { id: 'gpt-5',        label: 'GPT-5',        description: 'Original GPT-5 flagship', orId: 'openai/gpt-5' },
+      { id: 'gpt-5-mini',   label: 'GPT-5 mini',   description: 'Budget GPT-5 tier', orId: 'openai/gpt-5-mini' },
     ],
   },
   grok: {
@@ -78,10 +85,10 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     baseUrl: 'https://api.x.ai/v1',
     requiresKey: true, allowsBaseUrl: false, playable: true,
     models: [
-      { id: 'grok-4.3',        label: 'Grok 4.3',        description: 'Current flagship — fast, minimal hallucinations' },
-      { id: 'grok-4.3-latest', label: 'Grok 4.3 latest', description: 'Auto-tracks the newest 4.3 release' },
-      { id: 'grok-4.20',       label: 'Grok 4.20',       description: 'Reasoning-focused previous release' },
-      { id: 'grok-build-0.1',  label: 'Grok Build 0.1',  description: 'Fast agentic coding model' },
+      { id: 'grok-4.3',        label: 'Grok 4.3',        description: 'Current flagship — fast, minimal hallucinations', orId: 'x-ai/grok-4.3' },
+      { id: 'grok-4.3-latest', label: 'Grok 4.3 latest', description: 'Auto-tracks the newest 4.3 release', orId: 'x-ai/grok-4.3' },
+      { id: 'grok-4.20',       label: 'Grok 4.20',       description: 'Reasoning-focused previous release', orId: 'x-ai/grok-4.20' },
+      { id: 'grok-build-0.1',  label: 'Grok Build 0.1',  description: 'Fast agentic coding model', orId: 'x-ai/grok-build-0.1' },
     ],
   },
   gemini: {
@@ -89,13 +96,13 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     accent: '#8B6CFF', keyHint: 'AIza...', docsUrl: 'https://aistudio.google.com/apikey',
     requiresKey: true, allowsBaseUrl: false, playable: true,
     models: [
-      { id: 'gemini-3.5-flash',      label: 'Gemini 3.5 Flash',      description: 'Most intelligent — stable flagship' },
-      { id: 'gemini-3.1-pro-preview',label: 'Gemini 3.1 Pro',        description: 'Deep reasoning (preview)' },
-      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite', description: 'Frontier quality at low cost' },
-      { id: 'gemini-3-flash-preview',label: 'Gemini 3 Flash',        description: 'Fast Gemini 3 (preview)' },
-      { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      description: 'Reliable price-performance' },
-      { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro',        description: 'Previous-gen deep reasoning' },
-      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', description: 'Fastest 2.5 model' },
+      { id: 'gemini-3.5-flash',      label: 'Gemini 3.5 Flash',      description: 'Most intelligent — stable flagship', orId: 'google/gemini-3.5-flash' },
+      { id: 'gemini-3.1-pro-preview',label: 'Gemini 3.1 Pro',        description: 'Deep reasoning (preview)', orId: 'google/gemini-3.1-pro-preview' },
+      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite', description: 'Frontier quality at low cost', orId: 'google/gemini-3.1-flash-lite' },
+      { id: 'gemini-3-flash-preview',label: 'Gemini 3 Flash',        description: 'Fast Gemini 3 (preview)', orId: 'google/gemini-3-flash-preview' },
+      { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      description: 'Reliable price-performance', orId: 'google/gemini-2.5-flash' },
+      { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro',        description: 'Previous-gen deep reasoning', orId: 'google/gemini-2.5-pro' },
+      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', description: 'Fastest 2.5 model', orId: 'google/gemini-2.5-flash-lite' },
     ],
   },
   deepseek: {
@@ -104,10 +111,10 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     baseUrl: 'https://api.deepseek.com',
     requiresKey: true, allowsBaseUrl: false, playable: true,
     models: [
-      { id: 'deepseek-v4-pro',   label: 'DeepSeek V4 Pro',   description: 'Flagship — deep reasoning, 1M context' },
-      { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', description: 'Fast and cost-efficient' },
-      { id: 'deepseek-chat',     label: 'DeepSeek Chat',     description: 'Legacy alias — retires July 2026' },
-      { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner', description: 'Legacy thinking alias — retires July 2026' },
+      { id: 'deepseek-v4-pro',   label: 'DeepSeek V4 Pro',   description: 'Flagship — deep reasoning, 1M context', orId: 'deepseek/deepseek-v4-pro' },
+      { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', description: 'Fast and cost-efficient', orId: 'deepseek/deepseek-v4-flash' },
+      { id: 'deepseek-chat',     label: 'DeepSeek Chat',     description: 'Legacy alias — retires July 2026', orId: 'deepseek/deepseek-chat' },
+      { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner', description: 'Legacy thinking alias — retires July 2026', orId: 'deepseek/deepseek-r1' },
     ],
   },
   groq: {
@@ -116,10 +123,10 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     baseUrl: 'https://api.groq.com/openai/v1',
     requiresKey: true, allowsBaseUrl: false, playable: true,
     models: [
-      { id: 'openai/gpt-oss-120b',                    label: 'GPT-OSS 120B',   description: 'Open OpenAI model — big and fast' },
-      { id: 'openai/gpt-oss-20b',                     label: 'GPT-OSS 20B',    description: 'Instant responses' },
+      { id: 'openai/gpt-oss-120b',                    label: 'GPT-OSS 120B',   description: 'Open OpenAI model — big and fast', orId: 'openai/gpt-oss-120b' },
+      { id: 'openai/gpt-oss-20b',                     label: 'GPT-OSS 20B',    description: 'Instant responses', orId: 'openai/gpt-oss-20b' },
       { id: 'moonshotai/kimi-k2-instruct-0905',       label: 'Kimi K2',        description: 'Strong open agentic model' },
-      { id: 'qwen/qwen3-32b',                         label: 'Qwen3 32B',      description: 'Capable open model' },
+      { id: 'qwen/qwen3-32b',                         label: 'Qwen3 32B',      description: 'Capable open model', orId: 'qwen/qwen3-32b' },
       { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout', description: 'Meta latest open model' },
     ],
   },
@@ -183,6 +190,8 @@ export function isProviderId(v: unknown): v is ProviderId {
 /** Shape returned to the settings UI — never contains key material. */
 export interface ProviderConfigDTO {
   provider:        ProviderId
+  slot:            number
+  via:             KeyVia
   model:           string
   keyLast4:        string
   customName:      string | null

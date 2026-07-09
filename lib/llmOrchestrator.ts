@@ -1357,6 +1357,8 @@ const REGISTRY: Record<AIModel, AskFn> = {
     // BYOK ONLY — games always run on the owner's saved key, never server env vars.
     const rt = await resolveProviderRuntime(state.userId, 'claude')
     if (!rt?.apiKey || !rt.model) { console.error('[LLM] ❌ Claude has no saved BYOK key/model for this user'); throw new Error('No API key') }
+    // Routed via OpenRouter (baseUrl set) → speak the OpenAI wire protocol
+    if (rt.baseUrl) return askOpenAICompat({ id: 'claude', label: 'Claude' }, state, playerId)
     console.log(`[LLM] 🤖 Claude thinking... (user key)`)
     const client = await getAnthropicClient(rt.apiKey)
     const prompt = await buildPrompt(state, playerId)
@@ -1374,6 +1376,8 @@ const REGISTRY: Record<AIModel, AskFn> = {
     // BYOK ONLY — games always run on the owner's saved key, never server env vars.
     const rt = await resolveProviderRuntime(state.userId, 'gemini')
     if (!rt?.apiKey || !rt.model) { console.error('[LLM] ❌ Gemini has no saved BYOK key/model for this user'); throw new Error('No API key') }
+    // Routed via OpenRouter (baseUrl set) → speak the OpenAI wire protocol
+    if (rt.baseUrl) return askOpenAICompat({ id: 'gemini', label: 'Gemini' }, state, playerId)
     console.log(`[LLM] 🤖 Gemini thinking... (user key)`)
     const genAI = await getGoogleAIClient(rt.apiKey)
     const model = genAI.getGenerativeModel({ model: rt.model, systemInstruction: buildSystemPrompt('gemini') })
@@ -1570,7 +1574,7 @@ What did you learn? What patterns do you see in opponents? What would you change
     const model = player.model
     let raw = ''
 
-    if (model === 'claude') {
+    if (model === 'claude' && !(await resolveProviderRuntime(state.userId, 'claude'))?.baseUrl) {
       const rt = await resolveProviderRuntime(state.userId, 'claude')
       if (!rt?.apiKey || !rt.model) return null
       const client = await getAnthropicClient(rt.apiKey)
@@ -1580,7 +1584,7 @@ What did you learn? What patterns do you see in opponents? What would you change
         messages: [{ role: 'user', content: prompt }],
       })
       raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
-    } else if (model === 'gemini') {
+    } else if (model === 'gemini' && !(await resolveProviderRuntime(state.userId, 'gemini'))?.baseUrl) {
       const rt = await resolveProviderRuntime(state.userId, 'gemini')
       if (!rt?.apiKey || !rt.model) return null
       const genAI = await getGoogleAIClient(rt.apiKey)
@@ -1588,8 +1592,8 @@ What did you learn? What patterns do you see in opponents? What would you change
       const res = await m.generateContent(prompt)
       raw = res.response.text()
     } else {
-      // OpenAI-compatible (chatgpt, grok, deepseek, groq) — reuse OPENAI_COMPAT config
-      const cfg = OPENAI_COMPAT[model]
+      // OpenAI-compatible (chatgpt, grok, deepseek, groq — plus claude/gemini via OpenRouter)
+      const cfg = OPENAI_COMPAT[model] ?? { id: model, label: model }
       if (!cfg) return null
       const rt = await resolveProviderRuntime(state.userId, cfg.id)
       if (!rt?.apiKey || !rt.model) return null

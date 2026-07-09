@@ -144,6 +144,8 @@ model AiProviderConfig {
   id              String    @id @default(cuid())
   userId          String                           // owner — every read/write is scoped to this
   provider        String                           // whitelisted id: claude|chatgpt|gemini|grok|deepseek|groq|mistral|openrouter|ollama|custom
+  slot            Int       @default(0)            // custom provider supports multiple endpoints (slot 0..N); 0 for all others
+  via             String    @default("official")   // 'official' | 'openrouter' — which key/route this config uses
   encryptedKey    String                           // v1.<iv>.<ciphertext>.<tag> (base64url) — never returned by the API
   keyLast4        String                           // display-only suffix for "••••1234"
   model           String                           // user-selected model id for this provider
@@ -159,6 +161,6 @@ model AiProviderConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, provider])                     // one config per provider per user
+  @@unique([userId, provider, slot])               // one config per provider slot per user
   @@index([userId])
 }
