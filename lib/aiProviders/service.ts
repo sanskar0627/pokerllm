@@ -112,8 +112,9 @@ export async function upsertConfig(userId: string, input: UpsertInput): Promise<
       baseUrl: input.baseUrl ?? null,
       customName: input.customName ?? null,
       status: 'unverified',
-      // first custom endpoint starts active; later slots start inactive
-      isActive: input.provider === 'custom' ? slot === 0 || undefined : undefined,
+      // Custom: only slot 0 starts active (higher slots must be activated
+      // explicitly) so two customs can never be active at once. Others: true.
+      isActive: input.provider === 'custom' ? slot === 0 : true,
     },
     update: {
       via: input.via ?? 'official',
