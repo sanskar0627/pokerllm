@@ -96,7 +96,7 @@ export const AI_META: Record<AIModel, AIMeta> = {
   groq: {
     id:           'groq',
     label:        'Groq',
-    company:      'Groq (Llama 3.3)',
+    company:      'Groq',
     tagline:      'Lightning · Fearless · Relentless',
     logoUrl:      'https://groq.com/wp-content/uploads/2024/03/PBG-mark1-color.svg',
     border:       'border-[#FFD700]/60',
