@@ -1,36 +1,92 @@
-version: '3.8'
+# ─────────────────────────────────────────────────────────────────────────────
+# PokerLLM on a single VM (Contabo) — app + Redis + Postgres + Caddy (HTTPS)
+#
+# Usage on the VM:
+#   1. Create .env next to this file (see .env.example) with real values,
+#      including REDIS_PASSWORD and POSTGRES_PASSWORD.
+#   2. docker compose up -d --build
+#   3. https://poker.sanskarshukla.com  (Caddy fetches the TLS cert itself)
+#
+# Notes
+# - Poker's own database is Neon (DATABASE_URL in .env). The `postgres`
+#   service here is the SHARED instance for other projects (n8n, exness…):
+#   each project gets its own database inside it, never the same one.
+# - Redis DB indexes: poker uses /0 — point other projects at /1, /2, …
+# - Redis/Postgres bind to 127.0.0.1 only: reachable from the VM itself,
+#   never from the internet.
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
   app:
     build: .
     container_name: pokerllm-app
-    ports:
-      - '3000:3000'
-    env_file:
-      - .env.local
+    restart: unless-stopped
+    env_file: .env
     environment:
-      - NODE_ENV=production
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-pokerllm_dev_redis_2024}@redis:6379
-      - TRUSTED_PROXY=1
+      NODE_ENV: production
+      # Inside the compose network the hostname is the service name.
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
+      TRUSTED_PROXY: "1"          # Caddy sits in front — trust X-Forwarded-For
+      PORT: "3000"
+    expose:
+      - "3000"
     depends_on:
       redis:
         condition: service_healthy
-    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: pokerllm-redis
-    ports:
-      - '6379:6379'
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-pokerllm_dev_redis_2024}
-    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"    # localhost-only, for n8n/exness on this VM
     healthcheck:
-      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:-pokerllm_dev_redis_2024}', '--no-auth-warning', 'ping']
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD --no-auth-warning ping"]
       interval: 10s
       timeout: 3s
-      retries: 3
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  # Shared Postgres for OTHER projects (n8n, exness). Poker stays on Neon.
+  postgres:
+    image: postgres:16-alpine
+    container_name: shared-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"    # localhost-only; never exposed to the internet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"            # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data          # TLS certificates persist here
+      - caddy-config:/config
+    depends_on:
+      - app
 
 volumes:
   redis-data:
+  postgres-data:
+  caddy-data:
+  caddy-config:

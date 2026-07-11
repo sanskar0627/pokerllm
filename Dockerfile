@@ -52,7 +52,7 @@ EXPOSE 3000
 CMD ["sh", "-c", "\
   MISSING=0; \
   for v in DATABASE_URL AUTH_SECRET NEXTAUTH_URL; do \
-    if [ -z \"$(printenv $v)\" ]; then echo \"❌ MISSING ENV VAR: $v — set it in Railway → Variables\"; MISSING=1; fi; \
+    if [ -z \"$(printenv $v)\" ]; then echo \"❌ MISSING ENV VAR: $v — set it in .env (compose) or your host's variables\"; MISSING=1; fi; \
   done; \
   if [ \"$MISSING\" = \"1\" ]; then echo '🛑 Aborting: fix missing env vars above.'; exit 1; fi && \
   bunx prisma migrate deploy && bun server.ts"]

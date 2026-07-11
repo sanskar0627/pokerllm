@@ -1,12 +1,14 @@
 import nodemailer from 'nodemailer'
 
 /**
- * Email delivery — two transports, picked automatically:
+ * Email delivery — three transports, picked automatically (first match wins):
  *
- * 1. BREVO_API_KEY set  -> Brevo HTTPS API (api.brevo.com, port 443).
- *    REQUIRED on Railway: trial/hobby plans block outbound SMTP entirely
- *    (connection timeout on 465/587). HTTPS is never blocked.
- * 2. Otherwise          -> Gmail SMTP via nodemailer (works locally / on
+ * 1. RESEND_API_KEY set -> Resend HTTPS API (api.resend.com, port 443).
+ *    Preferred in production. Requires the sending domain to be verified
+ *    in Resend and EMAIL_SENDER to be an address on that domain
+ *    (e.g. noreply@sanskarshukla.com).
+ * 2. BREVO_API_KEY set  -> Brevo HTTPS API (api.brevo.com, port 443).
+ * 3. Otherwise          -> Gmail SMTP via nodemailer (works locally / on
  *    hosts that allow SMTP). Needs GMAIL_USER + GMAIL_APP_PASSWORD.
  */
 
@@ -28,6 +30,27 @@ function getTransporter() {
 const SENDER_NAME  = 'PokerLLM'
 const SENDER_EMAIL = process.env.EMAIL_SENDER || process.env.GMAIL_USER || 'noreply@pokerllm.com'
 const FROM_EMAIL   = process.env.EMAIL_FROM || `${SENDER_NAME} <${SENDER_EMAIL}>`
+
+/** Send via Resend's transactional HTTPS API (no SMTP ports needed). */
+async function sendViaResend(to: string, subject: string, html: string): Promise<void> {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: `${SENDER_NAME} <${SENDER_EMAIL}>`,
+      to: [to],
+      subject,
+      html,
+    }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Resend API ${res.status}: ${body.slice(0, 300)}`)
+  }
+}
 
 /** Send via Brevo's transactional HTTPS API (no SMTP ports needed). */
 async function sendViaBrevo(to: string, subject: string, html: string): Promise<void> {
@@ -187,7 +210,9 @@ export async function sendVerificationEmail(email: string, token: string) {
       `
 
   try {
-    if (process.env.BREVO_API_KEY) {
+    if (process.env.RESEND_API_KEY) {
+      await sendViaResend(email, subject, html)
+    } else if (process.env.BREVO_API_KEY) {
       await sendViaBrevo(email, subject, html)
     } else {
       await getTransporter().sendMail({ from: FROM_EMAIL, to: email, subject, html })

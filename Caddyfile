@@ -1,0 +1,19 @@
+# PokerLLM — automatic HTTPS + WebSocket-aware reverse proxy.
+# Caddy obtains and renews the Let's Encrypt certificate on its own;
+# the only requirement is that poker.sanskarshukla.com resolves to this VM.
+
+poker.sanskarshukla.com {
+	# Everything (including socket.io WebSocket upgrades) goes to the app.
+	# Caddy proxies WebSockets automatically — no extra config needed.
+	reverse_proxy app:3000
+
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
