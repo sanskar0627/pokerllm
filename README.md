@@ -188,7 +188,15 @@ Run Prisma migrations to create all tables:
 
 > `bunx prisma migrate dev && bunx prisma generate`
 
-### 4. Run
+### 4. Start Redis
+
+Game state persists in Redis (games survive server restarts). Start one locally:
+
+> `docker run -d --name pokerllm-redis -p 6379:6379 redis:7-alpine redis-server --requirepass yourpassword`
+
+Then set `REDIS_URL=redis://:yourpassword@localhost:6379` in `.env.local`. (Without Redis the app still runs, holding games in memory only — fine for a quick look, not for real use.)
+
+### 5. Run
 
 Start the development server:
 
