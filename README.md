@@ -175,9 +175,8 @@ Create a `.env.local` file in the root with these variables:
 | `AUTH_SECRET` | ✅ | Random secret for NextAuth (generate with `openssl rand -base64 32`) |
 | `NEXTAUTH_URL` | ✅ | Your app URL (e.g. `http://localhost:3000`) |
 | `AI_KEY_ENCRYPTION_SECRET` | ✅ | Encryption key for BYOK API keys (generate with `openssl rand -base64 32`) |
-| `GMAIL_USER` | ✅ | Gmail address for sending verification emails |
-| `GMAIL_APP_PASSWORD` | ✅ | Gmail App Password (not your regular password) |
-| `EMAIL_FROM` | ✅ | Sender display (e.g. `PokerLLM <you@gmail.com>`) |
+| `RESEND_API_KEY` | ✅ | Resend API key for verification emails ([resend.com](https://resend.com)) |
+| `EMAIL_SENDER` | ✅ | Sender address on your Resend-verified domain |
 | `GOOGLE_CLIENT_ID` | ❌ | For Google OAuth login |
 | `GOOGLE_CLIENT_SECRET` | ❌ | For Google OAuth login |
 | `REDIS_URL` | ❌ | Redis connection string. Omit for in-memory mode |
@@ -226,9 +225,8 @@ In your Railway service's **Variables** tab, add:
 | `AUTH_SECRET` | Your auth secret |
 | `NEXTAUTH_URL` | Your Railway app URL (e.g. `https://your-app.up.railway.app`) |
 | `AI_KEY_ENCRYPTION_SECRET` | Your encryption key |
-| `GMAIL_USER` | Your Gmail address |
-| `GMAIL_APP_PASSWORD` | Your Gmail App Password |
-| `EMAIL_FROM` | Sender display name |
+| `RESEND_API_KEY` | Your Resend API key |
+| `EMAIL_SENDER` | Sender address on your Resend-verified domain |
 | `PORT` | `8080` |
 
 ### 6. Deploy

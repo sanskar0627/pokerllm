@@ -1,38 +1,19 @@
-import nodemailer from 'nodemailer'
-
 /**
- * Email delivery — three transports, picked automatically (first match wins):
- *
- * 1. RESEND_API_KEY set -> Resend HTTPS API (api.resend.com, port 443).
- *    Preferred in production. Requires the sending domain to be verified
- *    in Resend and EMAIL_SENDER to be an address on that domain
- *    (e.g. noreply@sanskarshukla.com).
- * 2. BREVO_API_KEY set  -> Brevo HTTPS API (api.brevo.com, port 443).
- * 3. Otherwise          -> Gmail SMTP via nodemailer (works locally / on
- *    hosts that allow SMTP). Needs GMAIL_USER + GMAIL_APP_PASSWORD.
+ * Email delivery — Resend transactional HTTPS API (api.resend.com, port 443).
+ * Requires:
+ *   RESEND_API_KEY  — API key with sending access
+ *   EMAIL_SENDER    — an address on a domain verified in Resend
+ *                     (e.g. noreply@sanskarshukla.com)
  */
 
-let _transporter: nodemailer.Transporter | null = null
-
-function getTransporter() {
-  if (!_transporter) {
-    _transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      }
-    })
-  }
-  return _transporter
-}
-
 const SENDER_NAME  = 'PokerLLM'
-const SENDER_EMAIL = process.env.EMAIL_SENDER || process.env.GMAIL_USER || 'noreply@pokerllm.com'
-const FROM_EMAIL   = process.env.EMAIL_FROM || `${SENDER_NAME} <${SENDER_EMAIL}>`
+const SENDER_EMAIL = process.env.EMAIL_SENDER || 'noreply@pokerllm.com'
 
 /** Send via Resend's transactional HTTPS API (no SMTP ports needed). */
 async function sendViaResend(to: string, subject: string, html: string): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is not set — cannot send email')
+  }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -49,28 +30,6 @@ async function sendViaResend(to: string, subject: string, html: string): Promise
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`Resend API ${res.status}: ${body.slice(0, 300)}`)
-  }
-}
-
-/** Send via Brevo's transactional HTTPS API (no SMTP ports needed). */
-async function sendViaBrevo(to: string, subject: string, html: string): Promise<void> {
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      'api-key': process.env.BREVO_API_KEY!,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({
-      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`Brevo API ${res.status}: ${body.slice(0, 300)}`)
   }
 }
 
@@ -210,13 +169,7 @@ export async function sendVerificationEmail(email: string, token: string) {
       `
 
   try {
-    if (process.env.RESEND_API_KEY) {
-      await sendViaResend(email, subject, html)
-    } else if (process.env.BREVO_API_KEY) {
-      await sendViaBrevo(email, subject, html)
-    } else {
-      await getTransporter().sendMail({ from: FROM_EMAIL, to: email, subject, html })
-    }
+    await sendViaResend(email, subject, html)
     return { success: true }
   } catch (error) {
     console.error('Failed to send verification email:', error)

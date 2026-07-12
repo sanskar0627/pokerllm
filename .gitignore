@@ -66,3 +66,6 @@ backdate-commits.sh
 
 # Original uncompressed images (backup made during asset optimization)
 _image-originals/
+
+# local report doc — not part of the app
+PokerLLM-AI-System-Report.docx
