@@ -40,22 +40,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-claude.md
 
 # assets - committed for Railway deployment
 # /public/images/
 # /public/sounds/
 
-# claude config
-.claude/
-CLAUDE.md
 
 # misc
 .DS_Store
-test-logic.ts
 next-env.d.ts
 *.tsbuildinfo
-backdate-commits.sh
 # /public/music/
 # /public/videos/
 
@@ -67,5 +61,3 @@ backdate-commits.sh
 # Original uncompressed images (backup made during asset optimization)
 _image-originals/
 
-# local report doc — not part of the app
-PokerLLM-AI-System-Report.docx
