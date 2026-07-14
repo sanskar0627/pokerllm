@@ -135,36 +135,40 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, aiReflect
     )
   }
 
-  // ── 6-seat layout matching Golden-Flop ──
-  const total = players.length
+  // ── Deterministic seat layout ────────────────────────────────────────────
+  // One balanced arrangement per player count (source of truth):
+  //   2: top / bottom                     3: top / left / bottom
+  //   4: top / right / bottom / left     5: topL / topR / left / right / bottom
+  //   6: top / topL / topR / left / right / bottom
+  // Players fill slots CLOCKWISE ending at bottom, so players[last] — the
+  // human in play mode — always sits at the bottom, and turn order flows
+  // visually around the table.
+  type Slot = 'topLeft' | 'top' | 'topRight' | 'left' | 'right' | 'bottom'
 
-  let topPlayers: ClientPlayer[] = []
-  let leftPlayers: ClientPlayer[] = []
-  let rightPlayers: ClientPlayer[] = []
-  let bottomPlayers: ClientPlayer[] = []
-
-  if (total <= 2) {
-    topPlayers = players.slice(0, 1)
-    bottomPlayers = players.slice(1)
-  } else if (total === 3) {
-    topPlayers = [players[0]]
-    leftPlayers = [players[1]]
-    bottomPlayers = [players[2]]
-  } else if (total === 4) {
-    topPlayers = [players[0], players[1]]
-    rightPlayers = [players[2]]
-    bottomPlayers = [players[3]]
-  } else if (total === 5) {
-    topPlayers = [players[0], players[1]]
-    leftPlayers = [players[2]]
-    rightPlayers = [players[3]]
-    bottomPlayers = [players[4]]
-  } else {
-    topPlayers = [players[0], players[1], players[2]]
-    leftPlayers = [players[3]]
-    rightPlayers = [players[4]]
-    bottomPlayers = [players[5]]
+  const SLOT_ORDER: Record<number, Slot[]> = {
+    2: ['top', 'bottom'],
+    3: ['left', 'top', 'bottom'],
+    4: ['left', 'top', 'right', 'bottom'],
+    5: ['left', 'topLeft', 'topRight', 'right', 'bottom'],
+    6: ['left', 'topLeft', 'top', 'topRight', 'right', 'bottom'],
   }
+
+  const total = players.length
+  const slots = SLOT_ORDER[Math.min(Math.max(total, 2), 6)]
+  const bySlot: Partial<Record<Slot, ClientPlayer>> = {}
+  const overflow: ClientPlayer[] = []
+  players.forEach((p, i) => {
+    const s = slots[i]
+    if (s) bySlot[s] = p
+    else overflow.push(p) // defensive: >6 players would still render
+  })
+
+  // Top row renders left→right; side columns and bottom are single slots.
+  const topPlayers = [bySlot.topLeft, bySlot.top, bySlot.topRight, ...overflow]
+    .filter((p): p is ClientPlayer => Boolean(p))
+  const leftPlayers   = bySlot.left   ? [bySlot.left]   : []
+  const rightPlayers  = bySlot.right  ? [bySlot.right]  : []
+  const bottomPlayers = bySlot.bottom ? [bySlot.bottom] : []
 
   return (
     <div className="relative flex flex-col gap-1.5 sm:gap-3 w-full max-w-7xl mx-auto px-0.5 sm:px-0">
@@ -173,11 +177,11 @@ export function PokerTable({ gameState, playerId, thinkingId, winners, aiReflect
         <ActionLog log={gameState.log} players={gameState.players} />
       </div>
 
-      {/* Top row — wider separation when 2 seats so they don't crowd each other */}
+      {/* Top row — symmetric around the table's center line; pairs get a
+          wide gap (they flank the center), trios a medium one */}
       {topPlayers.length > 0 && (
         <div className={`flex justify-center gap-2
-          ${topPlayers.length === 2 ? 'sm:gap-32 lg:gap-48 xl:gap-64' : 'sm:gap-8 lg:gap-16'}
-          ${topPlayers.length > 1 ? 'sm:pr-68' : ''}`}>
+          ${topPlayers.length === 2 ? 'sm:gap-40 lg:gap-56' : 'sm:gap-8 lg:gap-16'}`}>
           {topPlayers.map(p => seat(p))}
         </div>
       )}
