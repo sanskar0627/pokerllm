@@ -85,8 +85,10 @@ export default function GamePage({ params }: Props) {
     socket.emit('player_action', { gameId, playerId, action, amount })
   }
 
-  // Stable reference so the memoized ChatPanel doesn't re-render on every state update
-  const handleSendChat = useCallback((msg: string) => sendChat(gameId, msg), [sendChat, gameId])
+  // Stable reference so the memoized ChatPanel doesn't re-render on every state update.
+  // Pass the display name so the optimistic local echo shows the right sender.
+  const senderName = session?.user?.name ?? 'You'
+  const handleSendChat = useCallback((msg: string) => sendChat(gameId, msg, senderName), [sendChat, gameId, senderName])
 
   if (!gameState || !assetsReady) {
     return (

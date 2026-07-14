@@ -69,6 +69,9 @@ export const ChatPanel = memo(function ChatPanel({ chatLog, onSend }: Props) {
     if (!msg) return
     onSend(msg)
     setInput('')
+    // Keep focus so the player can fire off the next message immediately —
+    // covers the SEND-button path, where the click would otherwise steal focus.
+    inputRef.current?.focus()
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

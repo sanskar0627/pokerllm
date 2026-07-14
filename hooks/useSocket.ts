@@ -21,6 +21,8 @@ export interface ChatLogEntry {
   playerName: string
   message:    string
   ts:         number
+  /** True for an optimistic local echo awaiting the server broadcast. */
+  pending?:   boolean
 }
 
 interface UseSocketReturn {
@@ -40,7 +42,7 @@ interface UseSocketReturn {
   clearWinners:    () => void
   clearError:      () => void
   nextRound:       (gameId: string) => void
-  sendChat:        (gameId: string, message: string) => void
+  sendChat:        (gameId: string, message: string, senderName?: string) => void
   leaveGame:       (gameId: string) => void
 }
 
@@ -97,13 +99,24 @@ export function useSocket(): UseSocketReturn {
     socket.on('ai_chat', (msg: AIChatMessage) => {
       // Show chat bubble for this player
       setChatBubbles(prev => ({ ...prev, [msg.playerId]: msg.message }))
-      // Add to persistent chat log (keep last 50 messages)
-      setChatLog(prev => [...prev.slice(-49), {
-        playerId: msg.playerId,
-        playerName: msg.playerName,
-        message: msg.message,
-        ts: msg.ts,
-      }])
+      // Add to persistent chat log (keep last 50 messages). If this is the
+      // server echo of our own optimistic entry, replace it instead of
+      // appending — no duplicates, no reordering.
+      setChatLog(prev => {
+        const idx = prev.findIndex(e => e.pending && e.message === msg.message)
+        const entry = {
+          playerId: msg.playerId,
+          playerName: msg.playerName,
+          message: msg.message,
+          ts: msg.ts,
+        }
+        if (idx !== -1) {
+          const next = [...prev]
+          next[idx] = entry
+          return next
+        }
+        return [...prev.slice(-49), entry]
+      })
       // Clear any existing timer for this player
       if (chatTimersRef.current[msg.playerId]) {
         clearTimeout(chatTimersRef.current[msg.playerId])
@@ -164,9 +177,19 @@ export function useSocket(): UseSocketReturn {
     setTimeout(() => { nextRoundRef.current = false }, 2000)
   }, [])
 
-  const sendChat = useCallback((gid: string, message: string) => {
-    if (!message.trim()) return
-    socketRef.current?.emit('send_chat', { gameId: gid, message })
+  const sendChat = useCallback((gid: string, message: string, senderName = 'You') => {
+    const msg = message.trim()
+    if (!msg) return
+    // Optimistic echo: show the message instantly; the server broadcast
+    // replaces this entry (matched by `pending` + text) when it arrives.
+    setChatLog(prev => [...prev.slice(-49), {
+      playerId: 'local_pending',
+      playerName: senderName,
+      message: msg,
+      ts: Date.now(),
+      pending: true,
+    }])
+    socketRef.current?.emit('send_chat', { gameId: gid, message: msg })
   }, [])
 
   const leaveGame = useCallback((gid: string) => {
