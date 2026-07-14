@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { useSocket } from '@/hooks/useSocket'
 import { LLMSelector } from '@/components/lobby/LLMSelector'
+import { AssetPreloader } from '@/components/game/AssetPreloader'
 import { GameModeToggle } from '@/components/lobby/GameModeToggle'
 import { PlayerSetup } from '@/components/lobby/PlayerSetup'
 import type { AIModel, CreateGameOptions } from '@/types/poker'
@@ -503,6 +504,9 @@ export default function HomePage() {
   // ─── Lobby Screen ───────────────────────────────────────────────────
   return (
     <main className="relative min-h-screen overflow-hidden">
+      {/* Warm the game-table asset cache while the player configures the
+          game — by the time they hit START, /game/:id paints instantly. */}
+      <AssetPreloader />
       {/* Background */}
       <img
         src="/images/lobby-bg.png"

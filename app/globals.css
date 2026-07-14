@@ -116,6 +116,16 @@ input[type='number'] {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Whole-scene reveal for the game table: one cohesive fade, no per-element
+   pop-in. Base opacity stays 1 (bfcache-safe — never stuck invisible). */
+@keyframes scene-in {
+  from { opacity: 0; transform: scale(0.988); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.animate-scene-in {
+  animation: scene-in 0.35s ease-out;
+}
+
 @keyframes shimmer {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(200%); }

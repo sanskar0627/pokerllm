@@ -3,19 +3,34 @@
 import { useEffect } from 'react'
 
 /**
- * Warms the browser cache for every asset the game will need mid-hand,
- * so cards/buttons never pop in the first time they're dealt.
+ * Game asset warming — two tiers:
  *
- * Runs during idle time after the table mounts; throttled in small
- * batches to avoid competing with the initial render for bandwidth.
+ * 1. CRITICAL: everything visible in the first frame of the table scene
+ *    (room background, felt, top bar, card back, avatars, coin).
+ *    `preloadCriticalAssets()` decodes these in parallel and resolves when
+ *    they're paintable — the game page gates its scene reveal on this, so
+ *    the table appears as one complete frame instead of assembling itself.
+ *    Capped by a timeout so a slow network can never block the game.
+ *
+ * 2. EVERYTHING ELSE: all 52 card faces + action buttons, warmed during
+ *    idle time in small batches. Mounted on the lobby too, so by the time
+ *    a player navigates to /game/:id the cache is already hot.
  */
 
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'] as const
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'] as const
 
-const UI_ASSETS = [
+/** First-frame scene assets — decoded before the table is revealed. */
+const CRITICAL_ASSETS = [
+  '/images/table-room-bg.png',
+  '/images/tabletop-removebg-preview.png',
+  '/images/topbar-bg.png',
   '/images/card-back.png',
+  '/images/avatar-placeholder.png',
   '/images/coin.png',
+]
+
+const UI_ASSETS = [
   '/images/btn-minus.png',
   '/images/btn-plus.png',
   '/images/raise-input-bg.png',
@@ -28,13 +43,44 @@ const UI_ASSETS = [
   '/images/buttons/allin-btn.png',
 ]
 
-let preloaded = false
+function decodeImage(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => {
+      // decode() paints-readies the bitmap off the main thread where supported
+      img.decode?.().then(resolve, () => resolve()) ?? resolve()
+    }
+    img.onerror = () => resolve() // missing asset must never block the game
+    img.src = url
+  })
+}
+
+let criticalPromise: Promise<void> | null = null
+
+/**
+ * Decode every first-frame asset in parallel. Memoized — instant on repeat
+ * calls (route re-entry, next game). Never takes longer than `timeoutMs`.
+ */
+export function preloadCriticalAssets(timeoutMs = 2500): Promise<void> {
+  if (!criticalPromise) {
+    criticalPromise = Promise.all(CRITICAL_ASSETS.map(decodeImage)).then(() => undefined)
+  }
+  const cap = new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+  return Promise.race([criticalPromise, cap])
+}
+
+let warmed = false
 
 export function AssetPreloader() {
   useEffect(() => {
-    if (preloaded) return
-    preloaded = true
+    if (warmed) return
+    warmed = true
 
+    // Kick the critical set immediately (no-op if already resolved)
+    void preloadCriticalAssets()
+
+    // Warm the long tail (52 cards + buttons) during idle time
     const urls = [
       ...UI_ASSETS,
       ...SUITS.flatMap(s => RANKS.map(r => `/images/cards/${r}_${s}.png`)),

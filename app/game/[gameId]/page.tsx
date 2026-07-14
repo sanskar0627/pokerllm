@@ -8,7 +8,7 @@ import { useAudio }                 from '@/hooks/useAudio'
 import { PokerTable }               from '@/components/game/PokerTable'
 import { ChatPanel }                from '@/components/game/ChatPanel'
 import { ThinkingPanel }            from '@/components/game/ThinkingPanel'
-import { AssetPreloader }           from '@/components/game/AssetPreloader'
+import { AssetPreloader, preloadCriticalAssets } from '@/components/game/AssetPreloader'
 import type { PlayerAction, WinnerInfo } from '@/types/poker'
 
 type Props = { params: Promise<{ gameId: string }> }
@@ -19,6 +19,16 @@ export default function GamePage({ params }: Props) {
   const { playSound } = useAudio()
 
   const { socket, connected, gameState, winners, thinkingId, error, nextRound, aiReflections, chatBubbles, chatLog, turnTimer, aiStatusMessages, aiThinkingLog, sendChat, leaveGame } = useSocket()
+
+  // Scene gate: the table is revealed only when BOTH the first game state AND
+  // the first-frame assets are ready — one complete frame, no piece-by-piece
+  // pop-in. Asset wait is capped (2.5s) so slow networks are never blocked.
+  const [assetsReady, setAssetsReady] = useState(false)
+  useEffect(() => {
+    let alive = true
+    preloadCriticalAssets().then(() => { if (alive) setAssetsReady(true) })
+    return () => { alive = false }
+  }, [])
   // Derived, not state — the id is fully determined by the game id
   const playerId = `human_${gameId}`
   // Removed fold-win auto-advance states
@@ -78,7 +88,7 @@ export default function GamePage({ params }: Props) {
   // Stable reference so the memoized ChatPanel doesn't re-render on every state update
   const handleSendChat = useCallback((msg: string) => sendChat(gameId, msg), [sendChat, gameId])
 
-  if (!gameState) {
+  if (!gameState || !assetsReady) {
     return (
       <main className="relative min-h-screen overflow-hidden">
         {/* Start warming card/button assets while we connect */}
@@ -121,7 +131,7 @@ export default function GamePage({ params }: Props) {
       />
       <div className="absolute inset-0 bg-black/35" />
 
-      <div className="relative z-10 min-h-screen min-h-[100dvh] py-2 sm:py-6">
+      <div className="relative z-10 min-h-screen min-h-[100dvh] py-2 sm:py-6 animate-scene-in">
         <div className={`max-w-7xl mx-auto px-2 sm:px-4 lg:px-8`}>
           {/* Top bar — Golden-Flop style */}
           <div className="relative mb-2 sm:mb-5 overflow-hidden rounded-lg sm:rounded-xl border border-[#FFD700]/20 sm:border-2 shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
