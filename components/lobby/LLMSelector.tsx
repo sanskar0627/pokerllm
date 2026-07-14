@@ -698,11 +698,19 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
     if (!selected.includes(id)) onChange([...selected, id])
   }
 
+  // 6 seats at the table: watch mode can seat 6 AIs; in play mode the human
+  // takes one seat, so at most 5 AIs.
+  const maxAIs = watchOnly ? 6 : 5
+  const atCapacity = selected.length >= maxAIs
+
   function toggle(id: AIModel) {
     if (selected.includes(id)) {
       // Deselect — collapse if this card was expanded
       onChange(selected.filter(m => m !== id))
       if (expanded === id) setExpanded(null)
+    } else if (atCapacity) {
+      // Table is full — the counter explains why the click did nothing
+      return
     } else if (!isReady(id)) {
       // Not configured yet → expand the config panel (don't seat)
       setExpanded(id)
@@ -718,7 +726,9 @@ export function LLMSelector({ selected, onChange, watchOnly = false }: Props) {
         <p className="font-pixel text-[10px] text-[#FFD700] uppercase tracking-[2px]">
           AI Players
         </p>
-        <span className="font-pixel text-[8px] text-white/40">{selected.length} selected</span>
+        <span className={`font-pixel text-[8px] ${atCapacity ? 'text-[#FFD700]' : 'text-white/40'}`}>
+          {selected.length}/{maxAIs} selected{atCapacity ? ' · TABLE FULL' : ''}
+        </span>
       </div>
 
       <div ref={containerRef} className="grid grid-cols-1 sm:grid-cols-2 gap-3">

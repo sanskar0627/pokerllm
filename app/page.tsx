@@ -568,8 +568,16 @@ export default function HomePage() {
             />
 
             <div className="relative space-y-6 sm:space-y-8">
-              {/* Game mode toggle */}
-              <GameModeToggle watchOnly={watchOnly} onChange={setWatchOnly} />
+              {/* Game mode toggle — switching watch(6 seats)→play(5 + you)
+                  trims the selection so START can never silently fail */}
+              <GameModeToggle
+                watchOnly={watchOnly}
+                onChange={(w) => {
+                  setWatchOnly(w)
+                  const cap = w ? 6 : 5
+                  if (selectedAIs.length > cap) setSelectedAIs(selectedAIs.slice(0, cap))
+                }}
+              />
 
               {/* Player setup and game configuration presets */}
               <PlayerSetup
@@ -581,6 +589,13 @@ export default function HomePage() {
 
               {/* AI selector */}
               <LLMSelector selected={selectedAIs} onChange={setSelectedAIs} watchOnly={watchOnly} />
+
+              {/* Server rejection (e.g. seat cap, missing key) — always visible */}
+              {socketError && (
+                <div className="bg-red-500/10 border border-red-500/35 rounded-xl px-4 py-2.5 text-center">
+                  <p className="font-pixel text-[7px] sm:text-[8px] text-red-400 uppercase tracking-wide leading-relaxed">{socketError}</p>
+                </div>
+              )}
 
               {/* Create button — matches auth primary button */}
               <button

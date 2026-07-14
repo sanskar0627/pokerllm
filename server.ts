@@ -132,17 +132,21 @@ function validateCreateOpts(opts: unknown): CreateGameOptions | string {
   if (!opts || typeof opts !== 'object') return 'Invalid options'
   const o = opts as Record<string, unknown>
 
-  // selectedAIs
-  if (!Array.isArray(o.selectedAIs) || o.selectedAIs.length === 0 || o.selectedAIs.length > 5)
-    return 'selectedAIs must be 1–5 models'
+  // watchOnly (validated first — it determines the AI seat cap)
+  if (typeof o.watchOnly !== 'boolean') return 'watchOnly must be boolean'
+
+  // selectedAIs — the table has 6 seats. Watch mode: all 6 can be AIs.
+  // Play mode: the human takes one seat, so at most 5 AIs.
+  const maxAIs = o.watchOnly ? 6 : 5
+  if (!Array.isArray(o.selectedAIs) || o.selectedAIs.length === 0 || o.selectedAIs.length > maxAIs)
+    return o.watchOnly
+      ? 'Watch mode supports 2–6 AI players'
+      : 'Play mode supports up to 5 AI players — you take the 6th seat'
   for (const m of o.selectedAIs) {
     if (!VALID_AI_MODELS.has(m as AIModel)) return `Unknown AI model: ${m}`
   }
   // Remove duplicates
   const selectedAIs: AIModel[] = [...new Set(o.selectedAIs as AIModel[])]
-
-  // watchOnly
-  if (typeof o.watchOnly !== 'boolean') return 'watchOnly must be boolean'
 
   // humanPlayerName
   let humanPlayerName: string | undefined
