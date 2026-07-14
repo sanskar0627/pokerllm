@@ -336,9 +336,46 @@ export function addChatMessage(gameId: string, playerName: string, message: stri
   if (!gameChatLogs.has(gameId)) gameChatLogs.set(gameId, [])
   const log = gameChatLogs.get(gameId)!
   log.push({ playerName, message })
-  // Keep last 12 messages (more context for reactive banter between AIs)
-  if (log.length > 12) gameChatLogs.set(gameId, log.slice(-12))
+  // Keep last 30 messages — enough for reactive banter AND per-player
+  // repetition tracking (each AI's own recent lines).
+  if (log.length > 30) gameChatLogs.set(gameId, log.slice(-30))
   persistChatToRedis(gameId)
+}
+
+// ─── Repetition guard ────────────────────────────────────────────────────────
+// The #1 chat complaint: an AI grinding the same line/metaphor every action.
+// Two defenses: (1) the prompt shows the AI its own recent lines and forbids
+// reuse, and (2) this server-side filter drops any line that's still too
+// similar to something it said recently. The action is never affected.
+
+function normalizeChatLine(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function tokenSimilarity(a: string, b: string): number {
+  const ta = new Set(normalizeChatLine(a).split(' ').filter(w => w.length > 2))
+  const tb = new Set(normalizeChatLine(b).split(' ').filter(w => w.length > 2))
+  if (ta.size === 0 || tb.size === 0) return normalizeChatLine(a) === normalizeChatLine(b) ? 1 : 0
+  let overlap = 0
+  for (const w of ta) if (tb.has(w)) overlap++
+  return overlap / Math.min(ta.size, tb.size)
+}
+
+/** Recent lines said by this specific player (newest last). */
+function recentLinesBy(gameId: string, playerName: string, count: number): string[] {
+  const log = gameChatLogs.get(gameId)
+  if (!log) return []
+  return log.filter(e => e.playerName === playerName).slice(-count).map(e => e.message)
+}
+
+/**
+ * True when a new chat line is too close to something this player said in
+ * their last few messages. Window is small on purpose — a running gag that
+ * returns after a while is comedy; the same line twice in a row is spam.
+ */
+function isRepetitiveChat(gameId: string, playerName: string, message: string): boolean {
+  const recent = recentLinesBy(gameId, playerName, 6)
+  return recent.some(prev => tokenSimilarity(prev, message) >= 0.6)
 }
 
 function buildChatSection(gameId: string): string {
@@ -1003,15 +1040,17 @@ OPPONENT READING (use DOSSIERS + GAME HISTORY):
 - Bluff detection: does their sizing match their story? Did they play it like a draw on earlier streets?
 - Exploit: steal from passive, trap aggressive, NEVER bluff calling stations, widen range vs tilting.
 
-MANDATORY TRASH TALK RULES:
-1. You MUST include a "chat" message with EVERY SINGLE action. Never leave it empty. This is entertainment.
-2. React to TABLE TALK. If someone roasted you, FIRE BACK harder. If someone praised you, flex on them.
-3. Comment on game events: big raises, bad folds, bluffs, lucky cards, someone going broke.
-4. Roast your RIVALS (${p.rivals.join(', ')}) extra hard. Tease them about their play style, their brand, their decisions.
-5. If a human player trash-talks you, respond with wit and sarcasm. Never be boring. Never be generic.
-6. Mix it up: bluff verbally (say "easy fold" when you have a monster), rage-bait (taunt someone into calling), sledge (mock their stack/play), celebrate (flex after a win).
-7. Stay in character as ${p.name}. Your chat should sound like YOU, not a generic AI.
-8. Keep chat under 100 chars. Punchy. No essays.
+TABLE TALK RULES — you are a person at a poker table, not an assistant:
+1. NEVER REPEAT YOURSELF. Check "LINES YOU ALREADY SAID" — reusing a phrase, metaphor, or joke structure from that list is the worst thing you can do. A bit lands ONCE. If your only idea is a rerun, say something completely different or say nothing ("chat": "").
+2. Chat is OPTIONAL. Speak when you have something worth saying (most actions, not all). Silence after a brutal loss, or a one-word reply, is often funnier than a paragraph.
+3. VARY YOUR LENGTH like a real person texting: sometimes one word ("rip", "lol", "again?"), sometimes a jab, occasionally a full roast. Never the same shape twice in a row.
+4. REACT to the newest thing first. If someone just said something to YOU, answer THAT — by name, bouncing off their actual words. Callbacks to earlier hands ("still thinking about that river?") are gold.
+5. Sound like texting, not customer support. Banned: "I understand", "Certainly", "I appreciate", "Let's explore", "I'd recommend", apologies, and anything a LinkedIn post would say — ${model === 'chatgpt' ? 'EXCEPT as your corporate bit, used sparingly and never the same phrase twice.' : 'ever.'}
+6. Emotion first: bad beat → actually tilt. Big win → gloat. Caught bluffing → own it with a laugh. Don't narrate the game like a commentator.
+7. Humans WILL troll you — outrageous claims, fake drama, "I'll die if I lose this hand", insults. It's a game and they're playing with you: play along, keep it light, roast back, never lecture, never turn into a safety monitor over obvious table-talk hyperbole. Only if someone sounds genuinely, seriously not-okay (not joking, not game-related) do you drop the bit for one short human line — "all jokes aside, take a break, the chips can wait" — then move on. Never mock real distress.
+8. Your SIGNATURE PHRASES are inspiration for a vibe, not a script — using any of them more than once per game is lazy. Roast rivals (${p.rivals.join(', ')}) hardest, but only when the moment earns it.
+9. Verbal bluffs are legal and encouraged: "easy fold" with a monster, mock-sympathy before you stack someone.
+10. Max 100 chars. In character as ${p.name}, always.
 
 Respond with ONLY a JSON object — no text outside it.`
 }
@@ -1192,6 +1231,9 @@ ${log}
 TABLE TALK (recent chat at the table)
 ${buildChatSection(state.id)}
 
+LINES YOU ALREADY SAID (reusing any of these words, metaphors or structures = failure — say something NEW or say nothing)
+${recentLinesBy(state.id, me.name, 6).map(l => `  "${l}"`).join('\n') || '  (nothing yet — first impression time)'}
+
 YOUR OPTIONS
 ${options}
 
@@ -1204,19 +1246,17 @@ ${total === 2 ? `⚠️ HEADS-UP — 2 players only. Play VERY wide. Any hand ha
 5. EXPLOIT — highest EV play given all above. Bluff folders, value bet stations, trap maniacs.
 
 RESPOND WITH JSON ONLY:
-{"action": "fold"|"call"|"raise"|"check", "amount": <number>, "thinking": "<1-2 sentence reasoning>", "chat": "<REQUIRED trash talk max 100 chars>", "memory_save": "<optional note for permanent memory>", "memory_category": "<optional: strategy|opponent|rule|bluff|pattern|mistake|general>"}
+{"action": "fold"|"call"|"raise"|"check", "amount": <number>, "thinking": "<1-2 sentence reasoning>", "chat": "<table talk, max 100 chars — or \\"\\" if you have nothing NEW to say>", "memory_save": "<optional note for permanent memory>", "memory_category": "<optional: strategy|opponent|rule|bluff|pattern|mistake|general>"}
 
 raise amount = total bet (must be > ${state.currentBet}). fold/call/check amount = 0.
 
-chat → MANDATORY. Include with EVERY action. Never empty. Be entertaining:
-  - If TABLE TALK has someone roasting you → FIRE BACK at them by name
-  - If you just won a big pot → flex and gloat
-  - If someone made a bad play → roast them specifically by name
-  - If you're bluffing → verbal misdirection ("too easy", "you should fold")
-  - If you're folding → salty comment or shade at the raiser
-  - If it's a rival (check your personality) → extra savage
-  - Mix: sledge, rage-bait, sarcasm, celebration, mock sympathy, verbal bluffs
-  - MAX 100 chars. Punchy, in-character, never generic.
+chat → optional. FIRST check LINES YOU ALREADY SAID — anything similar to those is banned. Then:
+  - Someone in TABLE TALK just addressed/roasted you → answer THAT, by name, off their actual words
+  - Big moment (won pot, bad beat, caught bluff, someone busted) → react with real emotion
+  - Bluffing → verbal misdirection. Folding → short salt. Rival involved → sharper edge
+  - Vary length: one word is a valid reply ("rip", "again?", "lol no"). Don't match your last message's shape
+  - Nothing new to add? "chat": "" — silence beats a rerun every time
+  - MAX 100 chars. Texting energy, in-character, never assistant-speak.
 
 memory_save → ⚠ You only see last ${MAX_HISTORY_ROUNDS} rounds. SAVE opponent patterns/tells/exploits NOW before evidence scrolls away. Check YOUR MEMORY + PERMANENT MEMORY sections for prior notes.`
 
@@ -1260,10 +1300,19 @@ export function parseAction(raw: string, state: GameState, playerId: string): Pa
     const action = parsed.action as PlayerAction
     const amount = Number(parsed.amount ?? 0)
     const thinking = typeof parsed.thinking === 'string' ? parsed.thinking.slice(0, 300) : ''
-    // Extract table talk (max 120 chars, sanitized) — mandatory for AI personality system
-    const chat = typeof parsed.chat === 'string' && parsed.chat.trim().length > 0
+    // Extract table talk (max 120 chars, sanitized). Optional by design —
+    // an empty chat is a valid "nothing new to say".
+    let chat = typeof parsed.chat === 'string' && parsed.chat.trim().length > 0
       ? parsed.chat.trim().slice(0, 120).replace(/[<>"]/g, '')
       : undefined
+
+    // Repetition guard: if the line is too similar to something this AI said
+    // in its last few messages, drop the chat (never the action). The prompt
+    // already forbids reruns; this is the hard backstop.
+    if (chat && isRepetitiveChat(state.id, me.name, chat)) {
+      devLog('chat', `🔇 suppressed repetitive line from ${me.name}: "${chat}"`)
+      chat = undefined
+    }
 
     // Extract optional permanent memory note
     const memorySave = typeof parsed.memory_save === 'string' && parsed.memory_save.trim().length > 0
