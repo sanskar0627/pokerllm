@@ -21,6 +21,7 @@ async function getGoogleAI() {
 // resolveProviderRuntime returns { apiKey, model, baseUrl } for the game's
 // owner, or null → we fall back to the server's env keys and default models.
 import { resolveProviderRuntime } from '@/lib/aiProviders/service'
+import { OPENROUTER_BASE_URL }    from '@/lib/aiProviders/catalog'
 
 // ─── Cached LLM client instances (reused across calls) ──────────────────────
 // Keyed by hashed API key so credentials never appear as Map keys (heap-safe).
@@ -48,11 +49,20 @@ async function getAnthropicClient(apiKey: string) {
   return _clientCache.get(cacheKey) as InstanceType<Awaited<ReturnType<typeof getAnthropic>>>
 }
 
+/** True when this baseURL points at OpenRouter (so we add required headers). */
+function isOpenRouterUrl(baseURL?: string): boolean {
+  return Boolean(baseURL && baseURL.startsWith(OPENROUTER_BASE_URL))
+}
+
 async function getOpenAIClient(apiKey: string, baseURL?: string) {
   const cacheKey = `openai:${hashKey(apiKey)}:${baseURL ?? ''}`
   if (!_clientCache.has(cacheKey)) {
     const OpenAI = await getOpenAI()
-    cachePut(cacheKey, new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) }))
+    // OpenRouter requires HTTP-Referer + X-Title for attribution and dashboard visibility.
+    const defaultHeaders = isOpenRouterUrl(baseURL)
+      ? { 'HTTP-Referer': 'https://pokerllm.com', 'X-Title': 'PokerLLM' }
+      : undefined
+    cachePut(cacheKey, new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}), ...(defaultHeaders ? { defaultHeaders } : {}) }))
   }
   return _clientCache.get(cacheKey) as InstanceType<Awaited<ReturnType<typeof getOpenAI>>>
 }
@@ -1624,9 +1634,13 @@ What did you learn? What patterns do you see in opponents? What would you change
     const model = player.model
     let raw = ''
 
-    if (model === 'claude' && !(await resolveProviderRuntime(state.userId, 'claude'))?.baseUrl) {
-      const rt = await resolveProviderRuntime(state.userId, 'claude')
-      if (!rt?.apiKey || !rt.model) return null
+    // Resolve credentials once — avoids redundant DB lookups + decrypts
+    const providerId = (OPENAI_COMPAT[model]?.id ?? model) as string
+    const rt = await resolveProviderRuntime(state.userId, providerId)
+    if (!rt?.apiKey || !rt.model) return null
+
+    // Claude via official Anthropic API (no baseUrl = not routed through OpenRouter)
+    if (model === 'claude' && !rt.baseUrl) {
       const client = await getAnthropicClient(rt.apiKey)
       const msg = await client.messages.create({
         model: rt.model, max_tokens: 200,
@@ -1634,23 +1648,19 @@ What did you learn? What patterns do you see in opponents? What would you change
         messages: [{ role: 'user', content: prompt }],
       })
       raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
-    } else if (model === 'gemini' && !(await resolveProviderRuntime(state.userId, 'gemini'))?.baseUrl) {
-      const rt = await resolveProviderRuntime(state.userId, 'gemini')
-      if (!rt?.apiKey || !rt.model) return null
+    } else if (model === 'gemini' && !rt.baseUrl) {
+      // Gemini via official Google AI API
       const genAI = await getGoogleAIClient(rt.apiKey)
       const m = genAI.getGenerativeModel({ model: rt.model, systemInstruction: REFLECT_SYSTEM })
       const res = await m.generateContent(prompt)
       raw = res.response.text()
     } else {
-      // OpenAI-compatible (chatgpt, grok, deepseek, groq — plus claude/gemini via OpenRouter)
+      // OpenAI-compatible: chatgpt, grok, deepseek, groq, custom
+      // plus claude/gemini routed via OpenRouter (baseUrl is set)
       const cfg = OPENAI_COMPAT[model] ?? { id: model, label: model }
-      if (!cfg) return null
-      const rt = await resolveProviderRuntime(state.userId, cfg.id)
-      if (!rt?.apiKey || !rt.model) return null
       const client = await getOpenAIClient(rt.apiKey, rt.baseUrl ?? cfg.baseURL)
-      const mdl = rt.model
       const res = await client.chat.completions.create({
-        model: mdl, max_tokens: 200,
+        model: rt.model, max_tokens: 200,
         messages: [{ role: 'system', content: REFLECT_SYSTEM }, { role: 'user', content: prompt }],
       })
       raw = res.choices[0]?.message?.content ?? ''
