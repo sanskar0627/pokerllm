@@ -122,12 +122,14 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     accent: '#F55036', keyHint: 'gsk_...', docsUrl: 'https://console.groq.com/keys',
     baseUrl: 'https://api.groq.com/openai/v1',
     requiresKey: true, allowsBaseUrl: false, playable: true,
+    // IDs verified against console.groq.com/docs/models (Jul 2026)
     models: [
-      { id: 'openai/gpt-oss-120b',                    label: 'GPT-OSS 120B',   description: 'Open OpenAI model — big and fast', orId: 'openai/gpt-oss-120b' },
-      { id: 'openai/gpt-oss-20b',                     label: 'GPT-OSS 20B',    description: 'Instant responses', orId: 'openai/gpt-oss-20b' },
-      { id: 'qwen/qwen3.6-27b',                       label: 'Qwen 3.6 27B',   description: 'Fast open-weight model', orId: 'qwen/qwen3.6-27b' },
-      { id: 'moonshotai/kimi-k2-instruct-0905',       label: 'Kimi K2',        description: 'Strong open agentic model', orId: 'moonshotai/kimi-k2-instruct' },
-      { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout', description: 'Meta latest open model', orId: 'meta-llama/llama-4-scout-17b-16e-instruct' },
+      { id: 'openai/gpt-oss-120b',                    label: 'GPT-OSS 120B',   description: 'Open OpenAI flagship — big and fast', orId: 'openai/gpt-oss-120b' },
+      { id: 'openai/gpt-oss-20b',                     label: 'GPT-OSS 20B',    description: 'Fastest — 1000 tok/s', orId: 'openai/gpt-oss-20b' },
+      { id: 'llama-3.3-70b-versatile',                label: 'Llama 3.3 70B',  description: 'Production Meta workhorse', orId: 'meta-llama/llama-3.3-70b-instruct' },
+      { id: 'llama-3.1-8b-instant',                   label: 'Llama 3.1 8B',   description: 'Cheapest, instant', orId: 'meta-llama/llama-3.1-8b-instruct' },
+      { id: 'qwen/qwen3-32b',                         label: 'Qwen3 32B',      description: 'Strong open-weight reasoner', orId: 'qwen/qwen3-32b' },
+      { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout', description: 'Meta latest open model (preview)', orId: 'meta-llama/llama-4-scout-17b-16e-instruct' },
     ],
   },
   mistral: {

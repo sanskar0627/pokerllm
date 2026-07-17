@@ -170,10 +170,10 @@ export async function setValidationResult(
 }
 
 /** Decrypt the stored key for a live validation run. Server-side only. */
-export async function getDecryptedKey(userId: string, provider: ProviderId, slot = 0): Promise<{ apiKey: string; baseUrl: string | null } | null> {
+export async function getDecryptedKey(userId: string, provider: ProviderId, slot = 0): Promise<{ apiKey: string; baseUrl: string | null; model: string } | null> {
   const row = await table().findUnique({ where: { userId_provider_slot: { userId, provider, slot } } })
   if (!row) return null
-  return { apiKey: decryptApiKey(row.encryptedKey, userId), baseUrl: row.baseUrl }
+  return { apiKey: decryptApiKey(row.encryptedKey, userId), baseUrl: row.baseUrl, model: row.model }
 }
 
 export class ServiceError extends Error {

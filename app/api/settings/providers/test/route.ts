@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Save this provider before testing' }, { status: 404 })
   }
 
-  const result = await validateProviderKey(provider, creds.apiKey, creds.baseUrl)
+  const result = await validateProviderKey(provider, creds.apiKey, creds.baseUrl, creds.model)
   const config = await setValidationResult(session.user.id, provider, result.ok, result.message, slot)
 
   return NextResponse.json({ ok: result.ok, message: result.message, config })

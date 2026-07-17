@@ -71,10 +71,28 @@ function classify(status: number): ValidationResult {
   return { ok: false, message: `Provider returned an unexpected status (${status})` }
 }
 
+/**
+ * For OpenAI-wire providers the /models response lists every id the key can
+ * use — a free, zero-token way to catch retired/renamed models at save time
+ * instead of mid-game. If the list can't be parsed, we don't block the user.
+ */
+async function checkModelInList(res: Response, model: string | undefined, okMessage: string): Promise<ValidationResult> {
+  if (!model) return { ok: true, message: okMessage }
+  try {
+    const body = await res.json() as { data?: { id?: string }[] }
+    const ids = (body.data ?? []).map(m => m.id).filter(Boolean)
+    if (ids.length > 0 && !ids.includes(model)) {
+      return { ok: false, message: `Key works, but "${model}" is not available here — pick another model` }
+    }
+  } catch { /* unparseable list — key is valid, don't block */ }
+  return { ok: true, message: okMessage }
+}
+
 export async function validateProviderKey(
   provider: ProviderId,
   apiKey: string,
   baseUrl?: string | null,
+  model?: string,
 ): Promise<ValidationResult> {
   const info = PROVIDERS[provider]
   const endpoint = baseUrl ?? info.baseUrl
@@ -86,7 +104,7 @@ export async function validateProviderKey(
       const res = await timedFetch(`${baseUrl}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       })
-      return res.ok ? { ok: true, message: 'Connected' } : classify(res.status)
+      return res.ok ? checkModelInList(res, model, 'Connected') : classify(res.status)
     }
 
     switch (info.wire) {
@@ -108,7 +126,7 @@ export async function validateProviderKey(
         const res = await timedFetch(`${base}/models`, {
           headers: { Authorization: `Bearer ${apiKey}` },
         })
-        return res.ok ? { ok: true, message: `Connected to ${info.label}` } : classify(res.status)
+        return res.ok ? checkModelInList(res, model, `Connected to ${info.label}`) : classify(res.status)
       }
     }
   } catch (err) {
