@@ -387,6 +387,12 @@ export function processAction(
 
   if (isBettingRoundOver(nextState)) {
     nextState = advancePhase(nextState)
+
+    // When all remaining players are all-in (or only 1 has chips),
+    // no meaningful betting can happen — auto-deal to showdown.
+    while (nextState.phase !== 'showdown' && shouldAutoAdvance(nextState)) {
+      nextState = advancePhase(nextState)
+    }
   } else {
     nextState = {
       ...nextState,
@@ -412,6 +418,17 @@ export function getNextActivePlayerIdx(state: GameState, fromIdx: number): numbe
 export function isBettingRoundOver(state: GameState): boolean {
   const active = state.players.filter(p => p.isActive && !p.folded)
   return active.every(p => p.hasActed && (p.bet === state.currentBet || p.stack === 0))
+}
+
+/**
+ * True when fewer than 2 active non-folded players still have chips.
+ * When this is true, no meaningful betting can occur — the remaining
+ * community cards should be dealt automatically to showdown.
+ */
+export function shouldAutoAdvance(state: GameState): boolean {
+  const active = state.players.filter(p => p.isActive && !p.folded)
+  const canAct = active.filter(p => p.stack > 0)
+  return canAct.length < 2
 }
 
 // ─── Blind rotation ───────────────────────────────────────────────────────────
